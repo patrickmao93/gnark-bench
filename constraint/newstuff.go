@@ -16,6 +16,10 @@ type NEWCS struct {
 	Blueprints []Blueprint
 }
 
+// func (cs *NEWCS) AddConstraint(r1c R1C, debugInfo ...DebugInfo) int {
+// 	panic("not implemented")
+// }
+
 // GetNbConstraints returns the number of constraints
 func (cs *NEWCS) GetNbConstraints() int {
 	return cs.NbConstraints
@@ -23,6 +27,11 @@ func (cs *NEWCS) GetNbConstraints() int {
 
 func (cs *NEWCS) GetInstruction(i int) Instruction {
 	return cs.Instructions[i]
+}
+
+func (cs *NEWCS) CheckUnconstrainedWires() error {
+	// TODO @gbotrel
+	return nil
 }
 
 func (cs *NEWCS) AddInstruction(blueprint Blueprint, inputs []uint32) (latestWire int) {

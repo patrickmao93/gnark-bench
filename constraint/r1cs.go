@@ -43,6 +43,15 @@ type R1CSCore struct {
 	Constraints []R1C
 }
 
+func (r1cs *R1CSCore) AddInstruction(blueprint Blueprint, calldata []uint32) int {
+	panic("not implemented")
+}
+
+// GetConstraint return a pointer to the constraint at index i, or nil if out of bounds.
+func (r1cs *R1CSCore) GetInstruction(i int) Instruction {
+	panic("not implemented")
+}
+
 // GetNbConstraints returns the number of constraints
 func (r1cs *R1CSCore) GetNbConstraints() int {
 	return len(r1cs.Constraints)
