@@ -71,6 +71,11 @@ type ConstraintSystem interface {
 	// CheckUnconstrainedWires returns and error if the constraint system has wires that are not uniquely constrained.
 	// This is experimental.
 	CheckUnconstrainedWires() error
+
+	AddInstruction(blueprint Blueprint, calldata []uint32) int
+
+	// GetConstraint return a pointer to the constraint at index i, or nil if out of bounds.
+	GetInstruction(i int) Instruction
 }
 
 type Iterable interface {

@@ -43,6 +43,18 @@ type solution struct {
 	cs                   *constraint.System
 }
 
+func (s *solution) GetWireValue(i int) constraint.Coeff {
+	var c constraint.Coeff
+	copy(c[:], s.values[i][:])
+	return c
+}
+
+func (s *solution) SetWireValue(i int, c constraint.Coeff) {
+	var e fr.Element
+	copy(e[:], c[:])
+	s.set(i, e)
+}
+
 func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element) (solution, error) {
 
 	s := solution{

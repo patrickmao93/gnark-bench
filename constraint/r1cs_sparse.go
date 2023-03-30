@@ -22,19 +22,13 @@ import (
 
 type SparseR1CS interface {
 	ConstraintSystem
+	TMPCoeffGetter
 
 	// AddConstraint adds a constraint to the sytem and returns its id
 	// This does not check for validity of the constraint.
 	// If a debugInfo parameter is provided, it will be appended to the debug info structure
 	// and will grow the memory usage of the constraint system.
-	AddConstraint(c SparseR1C, debugInfo ...DebugInfo) int
-
-	// GetConstraint return a pointer to the constraint at index i, or nil if out of bounds.
-	GetConstraint(i int) *SparseR1C
-
-	// GetCoefficient returns coefficient with given id in the coeff table.
-	// calls panic if i is out of bounds, because this is called in the hot path of the compiler.
-	GetCoefficient(i int) Coeff
+	// AddConstraint(c SparseR1C, debugInfo ...DebugInfo) int
 
 	// GetConstraints return the list of SparseR1C and a helper for pretty printing.
 	// See StringBuilder for more info.

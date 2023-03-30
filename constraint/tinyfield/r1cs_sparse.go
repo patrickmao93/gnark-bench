@@ -22,24 +22,21 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/fxamacker/cbor/v2"
 	"io"
-	"math"
-	"runtime"
-	"sync"
 	"time"
 
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
+	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/internal/backend/ioutils"
 	"github.com/consensys/gnark/logger"
-	"github.com/consensys/gnark/profile"
 
 	fr "github.com/consensys/gnark/internal/tinyfield"
 )
 
 // SparseR1CS represents a Plonk like circuit
 type SparseR1CS struct {
-	constraint.SparseR1CSCore
+	constraint.NEWCS
 	CoeffTable
 	arithEngine
 }
@@ -47,9 +44,10 @@ type SparseR1CS struct {
 // NewSparseR1CS returns a new SparseR1CS and sets r1cs.Coefficient (fr.Element) from provided big.Int values
 func NewSparseR1CS(capacity int) *SparseR1CS {
 	cs := SparseR1CS{
-		SparseR1CSCore: constraint.SparseR1CSCore{
-			System:      constraint.NewSystem(fr.Modulus()),
-			Constraints: make([]constraint.SparseR1C, 0, capacity),
+		NEWCS: constraint.NEWCS{
+			System:       constraint.NewSystem(fr.Modulus()),
+			Instructions: make([]constraint.Instruction, 0, capacity),
+			CallData:     make([]uint32, 0, capacity*2),
 		},
 		CoeffTable: newCoeffTable(capacity / 10),
 	}
@@ -57,18 +55,18 @@ func NewSparseR1CS(capacity int) *SparseR1CS {
 	return &cs
 }
 
-func (cs *SparseR1CS) AddConstraint(c constraint.SparseR1C, debugInfo ...constraint.DebugInfo) int {
-	profile.RecordConstraint()
-	cs.Constraints = append(cs.Constraints, c)
-	cID := len(cs.Constraints) - 1
-	if len(debugInfo) == 1 {
-		cs.DebugInfo = append(cs.DebugInfo, constraint.LogEntry(debugInfo[0]))
-		cs.MDebug[cID] = len(cs.DebugInfo) - 1
-	}
-	cs.UpdateLevel(cID, &c)
+// func (cs *SparseR1CS) AddConstraint(c constraint.SparseR1C, debugInfo ...constraint.DebugInfo) int {
+// 	profile.RecordConstraint()
+// 	cs.Constraints = append(cs.Constraints, c)
+// 	cID := len(cs.Constraints) - 1
+// 	if len(debugInfo) == 1 {
+// 		cs.DebugInfo = append(cs.DebugInfo, constraint.LogEntry(debugInfo[0]))
+// 		cs.MDebug[cID] = len(cs.DebugInfo) - 1
+// 	}
+// 	cs.UpdateLevel(cID, &c)
 
-	return cID
-}
+// 	return cID
+// }
 
 func (c *SparseR1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, error) {
 	opt, err := solver.NewConfig(opts...)
@@ -109,12 +107,30 @@ func (c *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element
 		o[i] = s0
 	}
 	offset := len(c.Public)
-	for i := 0; i < len(c.Constraints); i++ { // constraints
-		l[offset+i] = solution[c.Constraints[i].L.WireID()]
-		r[offset+i] = solution[c.Constraints[i].R.WireID()]
-		o[offset+i] = solution[c.Constraints[i].O.WireID()]
+	nbConstraints := c.GetNbConstraints()
+	j := 0
+
+	var sparseR1C constraint.SparseR1C
+	for i := 0; i < len(c.Instructions); i++ {
+		b := c.Instructions[i].Blueprint()
+		// for each instruction, get its constraints.
+		for k := 0; k < b.NbConstraints(); k++ {
+			b.WriteSparseR1C(&sparseR1C, k, c.Instructions[i])
+
+			l[offset+j] = solution[sparseR1C.L.WireID()]
+			r[offset+j] = solution[sparseR1C.R.WireID()]
+			o[offset+j] = solution[sparseR1C.O.WireID()]
+
+			j++
+		}
+
 	}
-	offset += len(c.Constraints)
+	if debug.Debug {
+		if j != nbConstraints {
+			panic("invalid number of constraints")
+		}
+	}
+	offset += nbConstraints
 
 	for i := 0; i < s-offset; i++ { // offset to reach 2**n constraints (where the id of l,r,o is 0, so we assign solution[0])
 		l[offset+i] = s0
@@ -131,7 +147,7 @@ func (c *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element
 // witness: contains the input variables
 // it returns the full slice of wires
 func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
-	log := logger.Logger().With().Int("nbConstraints", len(cs.Constraints)).Str("backend", "plonk").Logger()
+	log := logger.Logger().With().Int("nbConstraints", cs.GetNbConstraints()).Str("backend", "plonk").Logger()
 
 	// set the slices holding the solution.values and monitoring which variables have been solved
 	nbVariables := cs.NbInternalVariables + len(cs.Secret) + len(cs.Public)
@@ -174,14 +190,29 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 		coefficientsNegInv[i].Neg(&coefficientsNegInv[i])
 	}
 
-	if err := cs.parallelSolve(&solution, coefficientsNegInv); err != nil {
-		if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
-			log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
-		} else {
-			log.Err(err).Send()
+	// solve
+	nbConstraints := cs.GetNbConstraints()
+	j := 0
+	for i := 0; i < len(cs.Instructions); i++ {
+		b := cs.Instructions[i].Blueprint()
+		// for each instruction, get its constraints.
+		for k := 0; k < b.NbConstraints(); k++ {
+			b.SolveFor(k, cs.Instructions[i], &solution, cs)
+			j++
 		}
-		return solution.values, err
 	}
+	if j != nbConstraints {
+		panic("here invalid nb constraints")
+	}
+
+	// if err := cs.parallelSolve(&solution, coefficientsNegInv); err != nil {
+	// 	if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
+	// 		log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
+	// 	} else {
+	// 		log.Err(err).Send()
+	// 	}
+	// 	return solution.values, err
+	// }
 
 	// sanity check; ensure all wires are marked as "instantiated"
 	if !solution.isValid() {
@@ -195,120 +226,120 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 
 }
 
-func (cs *SparseR1CS) parallelSolve(solution *solution, coefficientsNegInv fr.Vector) error {
-	// minWorkPerCPU is the minimum target number of constraint a task should hold
-	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
-	// sequentially without sync.
-	const minWorkPerCPU = 50.0
+// func (cs *SparseR1CS) parallelSolve(solution *solution, coefficientsNegInv fr.Vector) error {
+// 	// minWorkPerCPU is the minimum target number of constraint a task should hold
+// 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
+// 	// sequentially without sync.
+// 	const minWorkPerCPU = 50.0
 
-	// cs.Levels has a list of levels, where all constraints in a level l(n) are independent
-	// and may only have dependencies on previous levels
+// 	// cs.Levels has a list of levels, where all constraints in a level l(n) are independent
+// 	// and may only have dependencies on previous levels
 
-	var wg sync.WaitGroup
-	chTasks := make(chan []int, runtime.NumCPU())
-	chError := make(chan *UnsatisfiedConstraintError, runtime.NumCPU())
+// 	var wg sync.WaitGroup
+// 	chTasks := make(chan []int, runtime.NumCPU())
+// 	chError := make(chan *UnsatisfiedConstraintError, runtime.NumCPU())
 
-	// start a worker pool
-	// each worker wait on chTasks
-	// a task is a slice of constraint indexes to be solved
-	for i := 0; i < runtime.NumCPU(); i++ {
-		go func() {
-			for t := range chTasks {
-				for _, i := range t {
-					// for each constraint in the task, solve it.
-					if err := cs.solveConstraint(cs.Constraints[i], solution, coefficientsNegInv); err != nil {
-						chError <- &UnsatisfiedConstraintError{CID: i, Err: err}
-						wg.Done()
-						return
-					}
-					if err := cs.checkConstraint(cs.Constraints[i], solution); err != nil {
-						if dID, ok := cs.MDebug[i]; ok {
-							errMsg := solution.logValue(cs.DebugInfo[dID])
-							chError <- &UnsatisfiedConstraintError{CID: i, DebugInfo: &errMsg}
-						} else {
-							chError <- &UnsatisfiedConstraintError{CID: i, Err: err}
-						}
-						wg.Done()
-						return
-					}
-				}
-				wg.Done()
-			}
-		}()
-	}
+// 	// start a worker pool
+// 	// each worker wait on chTasks
+// 	// a task is a slice of constraint indexes to be solved
+// 	for i := 0; i < runtime.NumCPU(); i++ {
+// 		go func() {
+// 			for t := range chTasks {
+// 				for _, i := range t {
+// 					// for each constraint in the task, solve it.
+// 					if err := cs.solveConstraint(cs.Constraints[i], solution, coefficientsNegInv); err != nil {
+// 						chError <- &UnsatisfiedConstraintError{CID: i, Err: err}
+// 						wg.Done()
+// 						return
+// 					}
+// 					if err := cs.checkConstraint(cs.Constraints[i], solution); err != nil {
+// 						if dID, ok := cs.MDebug[i]; ok {
+// 							errMsg := solution.logValue(cs.DebugInfo[dID])
+// 							chError <- &UnsatisfiedConstraintError{CID: i, DebugInfo: &errMsg}
+// 						} else {
+// 							chError <- &UnsatisfiedConstraintError{CID: i, Err: err}
+// 						}
+// 						wg.Done()
+// 						return
+// 					}
+// 				}
+// 				wg.Done()
+// 			}
+// 		}()
+// 	}
 
-	// clean up pool go routines
-	defer func() {
-		close(chTasks)
-		close(chError)
-	}()
+// 	// clean up pool go routines
+// 	defer func() {
+// 		close(chTasks)
+// 		close(chError)
+// 	}()
 
-	// for each level, we push the tasks
-	for _, level := range cs.Levels {
+// 	// for each level, we push the tasks
+// 	for _, level := range cs.Levels {
 
-		// max CPU to use
-		maxCPU := float64(len(level)) / minWorkPerCPU
+// 		// max CPU to use
+// 		maxCPU := float64(len(level)) / minWorkPerCPU
 
-		if maxCPU <= 1.0 {
-			// we do it sequentially
-			for _, i := range level {
-				if err := cs.solveConstraint(cs.Constraints[i], solution, coefficientsNegInv); err != nil {
-					return &UnsatisfiedConstraintError{CID: i, Err: err}
-				}
-				if err := cs.checkConstraint(cs.Constraints[i], solution); err != nil {
-					if dID, ok := cs.MDebug[i]; ok {
-						errMsg := solution.logValue(cs.DebugInfo[dID])
-						return &UnsatisfiedConstraintError{CID: i, DebugInfo: &errMsg}
-					}
-					return &UnsatisfiedConstraintError{CID: i, Err: err}
-				}
-			}
-			continue
-		}
+// 		if maxCPU <= 1.0 {
+// 			// we do it sequentially
+// 			for _, i := range level {
+// 				if err := cs.solveConstraint(cs.Constraints[i], solution, coefficientsNegInv); err != nil {
+// 					return &UnsatisfiedConstraintError{CID: i, Err: err}
+// 				}
+// 				if err := cs.checkConstraint(cs.Constraints[i], solution); err != nil {
+// 					if dID, ok := cs.MDebug[i]; ok {
+// 						errMsg := solution.logValue(cs.DebugInfo[dID])
+// 						return &UnsatisfiedConstraintError{CID: i, DebugInfo: &errMsg}
+// 					}
+// 					return &UnsatisfiedConstraintError{CID: i, Err: err}
+// 				}
+// 			}
+// 			continue
+// 		}
 
-		// number of tasks for this level is set to number of CPU
-		// but if we don't have enough work for all our CPU, it can be lower.
-		nbTasks := runtime.NumCPU()
-		maxTasks := int(math.Ceil(maxCPU))
-		if nbTasks > maxTasks {
-			nbTasks = maxTasks
-		}
-		nbIterationsPerCpus := len(level) / nbTasks
+// 		// number of tasks for this level is set to number of CPU
+// 		// but if we don't have enough work for all our CPU, it can be lower.
+// 		nbTasks :=  runtime.NumCPU()
+// 		maxTasks := int(math.Ceil(maxCPU))
+// 		if nbTasks > maxTasks {
+// 			nbTasks = maxTasks
+// 		}
+// 		nbIterationsPerCpus := len(level) / nbTasks
 
-		// more CPUs than tasks: a CPU will work on exactly one iteration
-		// note: this depends on minWorkPerCPU constant
-		if nbIterationsPerCpus < 1 {
-			nbIterationsPerCpus = 1
-			nbTasks = len(level)
-		}
+// 		// more CPUs than tasks: a CPU will work on exactly one iteration
+// 		// note: this depends on minWorkPerCPU constant
+// 		if nbIterationsPerCpus < 1 {
+// 			nbIterationsPerCpus = 1
+// 			nbTasks = len(level)
+// 		}
 
-		extraTasks := len(level) - (nbTasks * nbIterationsPerCpus)
-		extraTasksOffset := 0
+// 		extraTasks := len(level) - (nbTasks * nbIterationsPerCpus)
+// 		extraTasksOffset := 0
 
-		for i := 0; i < nbTasks; i++ {
-			wg.Add(1)
-			_start := i*nbIterationsPerCpus + extraTasksOffset
-			_end := _start + nbIterationsPerCpus
-			if extraTasks > 0 {
-				_end++
-				extraTasks--
-				extraTasksOffset++
-			}
-			// since we're never pushing more than num CPU tasks
-			// we will never be blocked here
-			chTasks <- level[_start:_end]
-		}
+// 		for i := 0; i < nbTasks; i++ {
+// 			wg.Add(1)
+// 			_start := i*nbIterationsPerCpus + extraTasksOffset
+// 			_end := _start + nbIterationsPerCpus
+// 			if extraTasks > 0 {
+// 				_end++
+// 				extraTasks--
+// 				extraTasksOffset++
+// 			}
+// 			// since we're never pushing more than num CPU tasks
+// 			// we will never be blocked here
+// 			chTasks <- level[_start:_end]
+// 		}
 
-		// wait for the level to be done
-		wg.Wait()
+// 		// wait for the level to be done
+// 		wg.Wait()
 
-		if len(chError) > 0 {
-			return <-chError
-		}
-	}
+// 		if len(chError) > 0 {
+// 			return <-chError
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // computeHints computes wires associated with a hint function, if any
 // if there is no remaining wire to solve, returns -1
@@ -438,14 +469,8 @@ func (cs *SparseR1CS) IsSolved(witness witness.Witness, opts ...solver.Option) e
 
 // GetConstraints return the list of SparseR1C and a coefficient resolver
 func (cs *SparseR1CS) GetConstraints() ([]constraint.SparseR1C, constraint.Resolver) {
-	return cs.Constraints, cs
-}
-
-func (cs *SparseR1CS) GetConstraint(i int) *constraint.SparseR1C {
-	if i < 0 || i >= len(cs.Constraints) {
-		return nil
-	}
-	return &cs.Constraints[i]
+	return []constraint.SparseR1C{}, cs
+	// return cs.Constraints, cs
 }
 
 func (cs *SparseR1CS) GetCoefficient(i int) (r constraint.Coeff) {
