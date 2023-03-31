@@ -1,6 +1,8 @@
 package constraint
 
 import (
+	"fmt"
+
 	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/profile"
 )
@@ -17,6 +19,7 @@ type NEWCS struct {
 }
 
 func (cs *NEWCS) AddSparseR1C(c SparseR1C, debugInfo ...DebugInfo) int {
+	fmt.Println(c.M)
 	// TODO @gbotrel temporary for refactor
 	cs.AddInstruction(BlueprintRegistry[0], []uint32{
 		// generic plonk constraint, the wires first
@@ -232,6 +235,8 @@ func (b *BlueprintGenericSCS) WriteSparseR1C(c *SparseR1C, constraintOffset int,
 	c.O.CID = calldata[5]
 	c.M[0].CID = calldata[6]
 	c.M[1].CID = calldata[7]
+	c.M[0].VID = c.L.VID
+	c.M[1].VID = c.R.VID
 	c.K = int(calldata[8])
 	c.Commitment = CommitmentConstraint(calldata[9])
 }

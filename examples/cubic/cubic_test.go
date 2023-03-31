@@ -15,13 +15,8 @@
 package cubic
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark/constraint"
-	"github.com/consensys/gnark/frontend"
-	"github.com/consensys/gnark/frontend/cs/scs"
 	"github.com/consensys/gnark/test"
 )
 
@@ -30,15 +25,20 @@ func TestCubicEquation(t *testing.T) {
 
 	var cubicCircuit Circuit
 
-	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, &cubicCircuit)
-	assert.NoError(err)
+	// ccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, &cubicCircuit)
+	// assert.NoError(err)
 
-	constraints, r := ccs.(constraint.SparseR1CS).GetConstraints()
-	fmt.Println("BEGIN", ccs.GetNbConstraints(), len(constraints))
-	for _, c := range constraints {
-		fmt.Println(c.String(r))
-	}
-	return
+	// constraints, r := ccs.(constraint.SparseR1CS).GetConstraints()
+	// fmt.Println("BEGIN", ccs.GetNbConstraints(), len(constraints))
+	// for _, c := range constraints {
+	// 	fmt.Println(c.String(r))
+	// }
+	// return
+
+	// 0 + 0 + -1⋅v0 + 1⋅(x×x) + 0 == 0
+	// 0 + 0 + -1⋅v1 + 1⋅(v0×x) + 0 == 0
+	// x + v1 + -1⋅v2 + 5 == 0
+	// Y + -1⋅v2 + 0 + 0 == 0
 
 	assert.ProverFailed(&cubicCircuit, &Circuit{
 		X: 42,
