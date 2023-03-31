@@ -250,7 +250,7 @@ func BuildTrace(spr *cs.SparseR1CS, pt *Trace) {
 		b := spr.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i])
+			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
 
 			ql[offset+j].Set(&spr.Coefficients[sparseR1C.L.CoeffID()])
 			qr[offset+j].Set(&spr.Coefficients[sparseR1C.R.CoeffID()])
@@ -384,7 +384,7 @@ func buildPermutation(spr *cs.SparseR1CS, pt *Trace, nbVariables int) {
 		b := spr.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i])
+			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
 
 			lro[offset+j] = sparseR1C.L.WireID()
 			lro[sizeSolution+offset+j] = sparseR1C.R.WireID()

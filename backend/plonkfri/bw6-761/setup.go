@@ -165,7 +165,7 @@ func Setup(spr *cs.SparseR1CS) (*ProvingKey, *VerifyingKey, error) {
 		b := spr.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i])
+			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
 
 			pk.EvaluationQlDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.L.CoeffID()])
 			pk.EvaluationQrDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.R.CoeffID()])
@@ -280,7 +280,7 @@ func buildPermutation(spr *cs.SparseR1CS, pk *ProvingKey) {
 		b := spr.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i])
+			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
 
 			lro[offset+j] = sparseR1C.L.WireID()
 			lro[sizeSolution+offset+j] = sparseR1C.R.WireID()

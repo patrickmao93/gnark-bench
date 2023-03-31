@@ -115,7 +115,7 @@ func (c *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element
 		b := c.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, c.Instructions[i])
+			b.WriteSparseR1C(&sparseR1C, k, c.Instructions[i], &c.NEWCS)
 
 			l[offset+j] = solution[sparseR1C.L.WireID()]
 			r[offset+j] = solution[sparseR1C.R.WireID()]
@@ -193,11 +193,27 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 	// solve
 	nbConstraints := cs.GetNbConstraints()
 	j := 0
+	var sparseR1C constraint.SparseR1C
 	for i := 0; i < len(cs.Instructions); i++ {
 		b := cs.Instructions[i].Blueprint()
 		// for each instruction, get its constraints.
 		for k := 0; k < b.NbConstraints(); k++ {
-			b.SolveFor(k, cs.Instructions[i], &solution, cs)
+			b.WriteSparseR1C(&sparseR1C, k, cs.Instructions[i], &cs.NEWCS)
+
+			if err := cs.solveConstraint(sparseR1C, &solution, coefficientsNegInv); err != nil {
+				return solution.values, &UnsatisfiedConstraintError{CID: j, Err: err}
+			}
+			if err := cs.checkConstraint(sparseR1C, &solution); err != nil {
+				// if dID, ok := cs.MDebug[i]; ok {
+				// 	errMsg := solution.logValue(cs.DebugInfo[dID])
+				// 	chError <- &UnsatisfiedConstraintError{CID: i, DebugInfo: &errMsg}
+				// } else {
+				// 	chError <- &UnsatisfiedConstraintError{CID: i, Err: err}
+				// }
+				return solution.values, &UnsatisfiedConstraintError{CID: j, Err: err}
+			}
+
+			// b.SolveFor(k, cs.Instructions[i], &solution, cs)
 			j++
 		}
 	}
@@ -469,8 +485,20 @@ func (cs *SparseR1CS) IsSolved(witness witness.Witness, opts ...solver.Option) e
 
 // GetConstraints return the list of SparseR1C and a coefficient resolver
 func (cs *SparseR1CS) GetConstraints() ([]constraint.SparseR1C, constraint.Resolver) {
-	return []constraint.SparseR1C{}, cs
-	// return cs.Constraints, cs
+
+	toReturn := make([]constraint.SparseR1C, 0, cs.GetNbConstraints())
+
+	for i := 0; i < len(cs.Instructions); i++ {
+		b := cs.Instructions[i].Blueprint()
+		// for each instruction, get its constraints.
+		for k := 0; k < b.NbConstraints(); k++ {
+			var sparseR1C constraint.SparseR1C
+			b.WriteSparseR1C(&sparseR1C, k, cs.Instructions[i], &cs.NEWCS)
+			toReturn = append(toReturn, sparseR1C)
+		}
+
+	}
+	return toReturn, cs
 }
 
 func (cs *SparseR1CS) GetCoefficient(i int) (r constraint.Coeff) {

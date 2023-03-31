@@ -24,6 +24,9 @@ type SparseR1CS interface {
 	ConstraintSystem
 	TMPCoeffGetter
 
+	// TODO @gbotrel temporary for refactor
+	AddSparseR1C(c SparseR1C, debugInfo ...DebugInfo) int
+
 	// AddConstraint adds a constraint to the sytem and returns its id
 	// This does not check for validity of the constraint.
 	// If a debugInfo parameter is provided, it will be appended to the debug info structure
@@ -146,6 +149,10 @@ type SparseR1C struct {
 	M          [2]Term
 	K          int // stores only the ID of the constant term that is used
 	Commitment CommitmentConstraint
+}
+
+func (c *SparseR1C) Clear() {
+	*c = SparseR1C{}
 }
 
 // WireIterator implements constraint.Iterable

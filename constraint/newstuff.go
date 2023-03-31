@@ -16,9 +16,25 @@ type NEWCS struct {
 	Blueprints []Blueprint
 }
 
-// func (cs *NEWCS) AddConstraint(r1c R1C, debugInfo ...DebugInfo) int {
-// 	panic("not implemented")
-// }
+func (cs *NEWCS) AddSparseR1C(c SparseR1C, debugInfo ...DebugInfo) int {
+	// TODO @gbotrel temporary for refactor
+	cs.AddInstruction(BlueprintRegistry[0], []uint32{
+		// generic plonk constraint, the wires first
+		c.L.VID,
+		c.R.VID,
+		c.O.VID,
+		// coeffs
+		c.L.CID,
+		c.R.CID,
+		c.O.CID,
+		c.M[0].CID,
+		c.M[1].CID,
+		uint32(c.K),
+		uint32(c.Commitment),
+	})
+	// panic("not implemented")
+	return 0
+}
 
 // GetNbConstraints returns the number of constraints
 func (cs *NEWCS) GetNbConstraints() int {
@@ -36,23 +52,21 @@ func (cs *NEWCS) CheckUnconstrainedWires() error {
 
 func (cs *NEWCS) AddInstruction(blueprint Blueprint, inputs []uint32) (latestWire int) {
 	// sanity check
-	if debug.Debug {
-		if blueprint.NbInputs() != len(inputs) {
-			panic("blueprint.NbInputs() != len(inputs)")
-		}
+	if blueprint.NbInputs() != len(inputs) {
+		panic("blueprint.NbInputs() != len(inputs)")
 	}
 
 	profile.RecordConstraint()
 
 	instruction := Instruction{
 		BlueprintID:           blueprint.UUID(),
-		StartInternalVariable: uint32(cs.NbInternalVariables),
+		StartInternalVariable: uint32(cs.NbInternalVariables - 1), // TODO for now we create wire before adding constraint.
 		StartCallData:         uint32(len(cs.CallData)),
 	}
 	cs.CallData = append(cs.CallData, inputs...)
 	cs.Instructions = append(cs.Instructions, instruction)
 	cs.NbConstraints += blueprint.NbConstraints()
-	cs.NbInternalVariables += blueprint.NbWires()
+	// cs.NbInternalVariables += blueprint.NbWires() // TODO for now we create wire before adding constraint.
 
 	// TODO add profiling.
 
@@ -112,7 +126,7 @@ func (b *BlueprintAddSCS) NbWires() int {
 // in setup we want to iterate on constraint in logical order.
 // we want wires and coeffs for one constraint.
 
-func (b *BlueprintAddSCS) WriteSparseR1C(c *SparseR1C, constraintOffset int, instruction Instruction) {
+func (b *BlueprintAddSCS) WriteSparseR1C(c *SparseR1C, constraintOffset int, instruction Instruction, cs *NEWCS) {
 	// c.Clear()
 	// or we use coeff ids for now.
 	// sparseR1C is short and sweet, can be a returned struct
@@ -145,9 +159,79 @@ type Blueprint interface {
 	NbInputs() int // to use to reslice NEWCS.calldata
 	NbConstraints() int
 	NbWires() int
-	WriteSparseR1C(c *SparseR1C, constraintOffset int, instruction Instruction)
+	WriteSparseR1C(c *SparseR1C, constraintOffset int, instruction Instruction, cs *NEWCS)
 }
 
 type BlueprintSCS interface {
 	InstantiateConstraint(offset int) SparseR1C
+}
+
+type BlueprintGenericSCS struct {
+}
+
+func init() {
+	BlueprintRegistry = append(BlueprintRegistry, &BlueprintGenericSCS{})
+}
+
+var _ Blueprint = &BlueprintGenericSCS{}
+
+func (b *BlueprintGenericSCS) UUID() uint32 {
+	return 0 // TODO
+}
+
+func (b *BlueprintGenericSCS) SolveFor(constraintOffset int, instruction Instruction, wirevalueGetter TMPWireValueGetter, coeffGetter TMPCoeffGetter) {
+	if constraintOffset != 0 {
+		panic("invalid offset")
+	}
+
+	// let's start in a first step with big.Int
+	// missingWire := 42// some compute with b.internals and instructions
+	// solver.GetCoefficient(..)
+	// solver.GetWireValue(...)
+	// solver.SetWireValue(...)
+	// solution[missingWire] = (a*b + c*d + e*f) / q
+	// xa := calldata[0]
+	// xb := calldata[1]
+	// qL := calldata[2]
+	// qR := calldata[3]
+
+	// vxa := solver.WireValue(xa)
+	// vqL := solver.CoeffValue(qL)
+	// vxa.Mul(vqL)
+
+	// solver.SetWireValue(ID, vxa)
+}
+func (b *BlueprintGenericSCS) NbInputs() int {
+	return 10 // xa, xb, qL, qR
+}
+func (b *BlueprintGenericSCS) NbConstraints() int {
+	return 1
+}
+func (b *BlueprintGenericSCS) NbWires() int {
+	return 1
+}
+
+// in setup we want to iterate on constraint in logical order.
+// we want wires and coeffs for one constraint.
+
+func (b *BlueprintGenericSCS) WriteSparseR1C(c *SparseR1C, constraintOffset int, instruction Instruction, cs *NEWCS) {
+	c.Clear()
+	// or we use coeff ids for now.
+	// sparseR1C is short and sweet, can be a returned struct
+	if constraintOffset != 0 {
+		panic("invalid offset")
+	}
+
+	calldata := cs.CallData[instruction.StartCallData : instruction.StartCallData+uint32(b.NbInputs())]
+
+	c.L.VID = calldata[0]
+	c.R.VID = calldata[1]
+	c.O.VID = calldata[2]
+	c.L.CID = calldata[3]
+	c.R.CID = calldata[4]
+	c.O.CID = calldata[5]
+	c.M[0].CID = calldata[6]
+	c.M[1].CID = calldata[7]
+	c.K = int(calldata[8])
+	c.Commitment = CommitmentConstraint(calldata[9])
 }
