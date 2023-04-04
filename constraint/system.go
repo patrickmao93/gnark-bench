@@ -270,6 +270,8 @@ func (system *System) AddSolverHint(f solver.Hint, input []LinearExpression, nbO
 	instruction := system.compressHint(hm, system.genericHint)
 	system.Instructions = append(system.Instructions, instruction)
 
+	system.updateLevel(len(system.Instructions)-1, &hm)
+
 	// system.HintMappings = append(system.HintMappings, hm)
 	// n := len(system.HintMappings) - 1
 	// for _, vID := range internalVariables {
