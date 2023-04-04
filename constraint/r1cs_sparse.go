@@ -32,10 +32,10 @@ type SparseR1CS interface {
 	// and will grow the memory usage of the constraint system.
 	// AddConstraint(c SparseR1C, debugInfo ...DebugInfo) int
 
-	// GetConstraints return the list of SparseR1C and a helper for pretty printing.
+	// GetConstraints2 return the list of SparseR1C and a helper for pretty printing.
 	// See StringBuilder for more info.
 	// ! this is an experimental API.
-	GetConstraints() ([]SparseR1C, Resolver)
+	GetConstraints2() ([]SparseR1C, Resolver)
 }
 
 // R1CS describes a set of SparseR1C constraint

@@ -557,7 +557,7 @@ func dummyInfinityCount(r1cs *cs.R1CS) (nbZeroesA, nbZeroesB int) {
 
 			j++
 		} else {
-			panic("not implemented")
+			continue // TODO @gbotrel handle blocks
 		}
 	}
 

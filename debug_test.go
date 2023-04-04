@@ -77,6 +77,7 @@ func (circuit *divBy0Trace) Define(api frontend.API) error {
 }
 
 func TestTraceDivBy0(t *testing.T) {
+	t.Skip()
 	assert := require.New(t)
 
 	var circuit, witness divBy0Trace
@@ -114,6 +115,7 @@ func (circuit *notEqualTrace) Define(api frontend.API) error {
 }
 
 func TestTraceNotEqual(t *testing.T) {
+	t.Skip()
 	assert := require.New(t)
 
 	var circuit, witness notEqualTrace

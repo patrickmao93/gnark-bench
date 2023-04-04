@@ -42,6 +42,11 @@ type R1CS struct {
 	constraint.System
 	CoeffTable
 	arithEngine
+
+	// ...
+	isR1CS             bool
+	a, b, c            fr.Vector
+	coefficientsNegInv fr.Vector
 }
 
 // NewR1CS returns a new R1CS and sets cs.Coefficient (fr.Element) from provided big.Int values
@@ -51,23 +56,10 @@ func NewR1CS(capacity int) *R1CS {
 	r := R1CS{
 		System:     constraint.NewSystem(fr.Modulus(), capacity),
 		CoeffTable: newCoeffTable(capacity / 10),
+		isR1CS:     true,
 	}
 	return &r
 }
-
-// func (cs *R1CS) AddConstraint(r1c constraint.R1C, debugInfo ...constraint.DebugInfo) int {
-// 	profile.RecordConstraint()
-// 	cs.Constraints = append(cs.Constraints, r1c)
-// 	cID := cs.GetNbConstraints() - 1
-// 	if len(debugInfo) == 1 {
-// 		cs.DebugInfo = append(cs.DebugInfo, constraint.LogEntry(debugInfo[0]))
-// 		cs.MDebug[cID] = len(cs.DebugInfo) - 1
-// 	}
-
-// 	cs.UpdateLevel(cID, &r1c)
-
-// 	return cID
-// }
 
 // Solve returns the vector w solution to the system, that is
 // Aw o Bw - Cw = 0
@@ -77,19 +69,47 @@ func (cs *R1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, erro
 		return nil, err
 	}
 
-	var res R1CSSolution
-
-	s := ecc.NextPowerOfTwo(uint64(cs.GetNbConstraints()))
-	res.A = make(fr.Vector, cs.GetNbConstraints(), s)
-	res.B = make(fr.Vector, cs.GetNbConstraints(), s)
-	res.C = make(fr.Vector, cs.GetNbConstraints(), s)
+	if cs.isR1CS {
+		s := ecc.NextPowerOfTwo(uint64(cs.GetNbConstraints()))
+		cs.a = make(fr.Vector, cs.GetNbConstraints(), s)
+		cs.b = make(fr.Vector, cs.GetNbConstraints(), s)
+		cs.c = make(fr.Vector, cs.GetNbConstraints(), s)
+		defer func() {
+			cs.a = nil
+			cs.b = nil
+			cs.c = nil
+		}()
+	} else {
+		// batch invert the coefficients to avoid many divisions in the solver
+		cs.coefficientsNegInv = fr.Vector(fr.BatchInvert(cs.Coefficients))
+		for i := 0; i < len(cs.coefficientsNegInv); i++ {
+			cs.coefficientsNegInv[i].Neg(&cs.coefficientsNegInv[i])
+		}
+		defer func() {
+			cs.coefficientsNegInv = nil
+		}()
+	}
 
 	v := witness.Vector().(fr.Vector)
 
-	res.W, err = cs.solve(v, res.A, res.B, res.C, opt)
+	solution, err := cs.solve(v, opt)
 	if err != nil {
 		return nil, err
 	}
+
+	if cs.isR1CS {
+		var res R1CSSolution
+		res.W = solution
+		res.A = cs.a
+		res.B = cs.b
+		res.C = cs.c
+		return &res, nil
+	}
+
+	// sparse R1CS
+	var res SparseR1CSSolution
+	// query l, r, o in Lagrange basis, not blinded
+	res.L, res.R, res.O = cs.evaluateLROSmallDomain(solution)
 
 	return &res, nil
 }
@@ -99,8 +119,13 @@ func (cs *R1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, erro
 // a, b, c vectors: ab-c = hz
 // witness = [publicWires | secretWires] (without the ONE_WIRE !)
 // returns  [publicWires | secretWires | internalWires ]
-func (cs *R1CS) solve(witness, a, b, c fr.Vector, opt solver.Config) (fr.Vector, error) {
-	log := logger.Logger().With().Int("nbConstraints", cs.GetNbConstraints()).Str("backend", "groth16").Logger()
+func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
+	log := logger.Logger().With().Int("nbConstraints", cs.GetNbConstraints()).Logger()
+
+	witnessOffset := 0
+	if cs.isR1CS {
+		witnessOffset++
+	}
 
 	nbWires := len(cs.Public) + len(cs.Secret) + cs.NbInternalVariables
 	solution, err := newSolution(&cs.System, nbWires, opt.HintFunctions, cs.Coefficients)
@@ -109,73 +134,40 @@ func (cs *R1CS) solve(witness, a, b, c fr.Vector, opt solver.Config) (fr.Vector,
 	}
 	start := time.Now()
 
-	if len(witness) != len(cs.Public)-1+len(cs.Secret) { // - 1 for ONE_WIRE
-		err = fmt.Errorf("invalid witness size, got %d, expected %d = %d (public) + %d (secret)", len(witness), int(len(cs.Public)-1+len(cs.Secret)), len(cs.Public)-1, len(cs.Secret))
+	expectedWitnessSize := len(cs.Public) - witnessOffset + len(cs.Secret)
+
+	if len(witness) != expectedWitnessSize {
+		err = fmt.Errorf("invalid witness size, got %d, expected %d", len(witness), expectedWitnessSize)
 		log.Err(err).Send()
 		return solution.values, err
 	}
 
-	// compute the wires and the a, b, c polynomials
-	if len(a) != cs.GetNbConstraints() || len(b) != cs.GetNbConstraints() || len(c) != cs.GetNbConstraints() {
-		err = errors.New("invalid input size: len(a, b, c) == len(Constraints)")
-		log.Err(err).Send()
-		return solution.values, err
+	if witnessOffset == 1 {
+		solution.solved[0] = true // ONE_WIRE
+		solution.values[0].SetOne()
 	}
 
-	solution.solved[0] = true // ONE_WIRE
-	solution.values[0].SetOne()
-	copy(solution.values[1:], witness)
+	copy(solution.values[witnessOffset:], witness)
 	for i := range witness {
-		solution.solved[i+1] = true
+		solution.solved[i+witnessOffset] = true
 	}
 
 	// keep track of the number of wire instantiations we do, for a sanity check to ensure
 	// we instantiated all wires
-	solution.nbSolved += uint64(len(witness) + 1)
+	solution.nbSolved += uint64(len(witness) + witnessOffset)
 
 	// now that we know all inputs are set, defer log printing once all solution.values are computed
 	// (or sooner, if a constraint is not satisfied)
 	defer solution.printLogs(opt.Logger, cs.Logs)
 
-	if err := cs.parallelSolve(&solution, a, b, c); err != nil {
-		// if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
-		// 	log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
-		// } else {
-		log.Err(err).Send()
-		// }
+	if err := cs.parallelSolve(&solution); err != nil {
+		if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
+			log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
+		} else {
+			log.Err(err).Send()
+		}
 		return solution.values, err
 	}
-
-	// i := 0
-
-	// for _, inst := range cs.Instructions {
-	// 	blueprint := cs.Blueprints[inst.BlueprintID]
-	// 	if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
-	// 		bc.DecompressR1C(&r1c, cs.GetCallData(inst))
-
-	// 		if err := cs.solveConstraint(r1c, &solution, &a[i], &b[i], &c[i]); err != nil {
-	// 			var debugInfo *string
-	// 			if dID, ok := cs.MDebug[i]; ok {
-	// 				debugInfo = new(string)
-	// 				*debugInfo = solution.logValue(cs.DebugInfo[dID])
-	// 			}
-	// 			if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
-	// 				log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
-	// 			} else {
-	// 				log.Err(err).Send()
-	// 			}
-	// 			return solution.values, &UnsatisfiedConstraintError{CID: i, Err: err, DebugInfo: debugInfo}
-	// 		}
-	// 		i++
-	// 	} else if bc, ok := blueprint.(constraint.BlueprintHint); ok {
-	// 		bc.DecompressHint(&hm, cs.GetCallData(inst))
-	// 		if err := solution.solveWithHint(hm); err != nil {
-	// 			return solution.values, err
-	// 		}
-	// 	} else {
-	// 		panic("not implemented")
-	// 	}
-	// }
 
 	// sanity check; ensure all wires are marked as "instantiated"
 	if !solution.isValid() {
@@ -188,37 +180,46 @@ func (cs *R1CS) solve(witness, a, b, c fr.Vector, opt solver.Config) (fr.Vector,
 	return solution.values, nil
 }
 
-func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution, a, b, c fr.Vector) error {
+func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution) error {
 	blueprint := cs.Blueprints[inst.BlueprintID]
-	if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
-		var r1c constraint.R1C
-		bc.DecompressR1C(&r1c, cs.GetCallData(inst))
-		cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
-		return cs.solveConstraint(cID, &r1c, solution, &a[cID], &b[cID], &c[cID])
-		// if err := ; err != nil {
-		// 	var debugInfo *string
-		// 	if dID, ok := cs.MDebug[i]; ok {
-		// 		debugInfo = new(string)
-		// 		*debugInfo = solution.logValue(cs.DebugInfo[dID])
-		// 	}
-		// 	if unsatisfiedErr, ok := err.(*UnsatisfiedConstraintError); ok {
-		// 		log.Err(errors.New("unsatisfied constraint")).Int("id", unsatisfiedErr.CID).Send()
-		// 	} else {
-		// 		log.Err(err).Send()
-		// 	}
-		// 	return solution.values, &UnsatisfiedConstraintError{CID: i, Err: err, DebugInfo: debugInfo}
-		// }
-	} else if bc, ok := blueprint.(constraint.BlueprintHint); ok {
+
+	if bc, ok := blueprint.(constraint.BlueprintHint); ok {
 		var hm constraint.HintMapping
 		bc.DecompressHint(&hm, cs.GetCallData(inst))
 		return solution.solveWithHint(hm)
+	}
+
+	if cs.isR1CS {
+		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
+			var r1c constraint.R1C
+			// TODO @gbotrel use pool object here for the R1C
+			bc.DecompressR1C(&r1c, cs.GetCallData(inst))
+			cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
+			return cs.solveConstraint(cID, &r1c, solution, &cs.a[cID], &cs.b[cID], &cs.c[cID])
+		} else {
+			panic("not implemented")
+		}
 	} else {
-		panic("not implemented")
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			// sparse R1CS
+			var sparseR1C constraint.SparseR1C
+			bc.DecompressSparseR1C(&sparseR1C, cs.GetCallData(inst))
+
+			if err := cs.solveSparseR1C(sparseR1C, solution, cs.coefficientsNegInv); err != nil {
+				return &UnsatisfiedConstraintError{CID: int(inst.ConstraintOffset), Err: err}
+			}
+			if err := cs.checkConstraint(sparseR1C, solution); err != nil {
+				return &UnsatisfiedConstraintError{CID: int(inst.ConstraintOffset), Err: err}
+			}
+			return nil
+		} else {
+			panic("not implemented")
+		}
 	}
 
 }
 
-func (cs *R1CS) parallelSolve(solution *solution, a, b, c fr.Vector) error {
+func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
 	// minWorkPerCPU is the minimum target number of constraint a task should hold
 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
 	// sequentially without sync.
@@ -231,7 +232,6 @@ func (cs *R1CS) parallelSolve(solution *solution, a, b, c fr.Vector) error {
 	// first we solve the unsolved wire (if any)
 	// then we check that the constraint is valid
 	// if a[i] * b[i] != c[i]; it means the constraint is not satisfied
-
 	var wg sync.WaitGroup
 	chTasks := make(chan []int, runtime.NumCPU())
 	chError := make(chan error, runtime.NumCPU())
@@ -244,7 +244,8 @@ func (cs *R1CS) parallelSolve(solution *solution, a, b, c fr.Vector) error {
 			for t := range chTasks {
 				for _, i := range t {
 					// for each constraint in the task, solve it.
-					if err := cs.solveInstruction(cs.Instructions[i], solution, a, b, c); err != nil {
+					// if err := cs.solveInstruction(cs.Instructions[i], solution, a, b, c); err != nil {
+					if err := fn(cs.Instructions[i]); err != nil {
 						// var debugInfo *string
 						// if dID, ok := cs.MDebug[i]; ok {
 						// 	debugInfo = new(string)
@@ -275,7 +276,7 @@ func (cs *R1CS) parallelSolve(solution *solution, a, b, c fr.Vector) error {
 		if maxCPU <= 1.0 {
 			// we do it sequentially
 			for _, i := range level {
-				if err := cs.solveInstruction(cs.Instructions[i], solution, a, b, c); err != nil {
+				if err := fn(cs.Instructions[i]); err != nil {
 					return err
 				}
 			}
@@ -324,6 +325,13 @@ func (cs *R1CS) parallelSolve(solution *solution, a, b, c fr.Vector) error {
 	}
 
 	return nil
+}
+
+func (cs *R1CS) parallelSolve(solution *solution) error {
+	solve := func(instruction constraint.Instruction) error {
+		return cs.solveInstruction(instruction, solution)
+	}
+	return cs.parallelProcess(solve)
 }
 
 // IsSolved
@@ -386,16 +394,6 @@ func (cs *R1CS) solveConstraint(cID uint32, r *constraint.R1C, solution *solutio
 				solution.accumulateInto(t, val)
 				continue
 			}
-
-			// // first we check if this is a hint wire
-			// if hint, ok := cs.MHints[vID]; ok {
-			// 	if err := solution.solveWithHint(vID, hint); err != nil {
-			// 		return err
-			// 	}
-			// 	// now that the wire is saved, accumulate it into a, b or c
-			// 	solution.accumulateInto(t, val)
-			// 	continue
-			// }
 
 			if loc != 0 {
 				panic("found more than one wire to instantiate")
@@ -531,4 +529,56 @@ func (cs *R1CS) ReadFrom(r io.Reader) (int64, error) {
 	}
 
 	return int64(decoder.NumBytesRead()), nil
+}
+
+// evaluateLROSmallDomain extracts the solution l, r, o, and returns it in lagrange form.
+// solution = [ public | secret | internal ]
+func (cs *R1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element, []fr.Element, []fr.Element) {
+
+	//s := int(pk.Domain[0].Cardinality)
+	s := cs.GetNbConstraints() + len(cs.Public) // len(spr.Public) is for the placeholder constraints
+	s = int(ecc.NextPowerOfTwo(uint64(s)))
+
+	var l, r, o []fr.Element
+	l = make([]fr.Element, s)
+	r = make([]fr.Element, s)
+	o = make([]fr.Element, s)
+	s0 := solution[0]
+
+	for i := 0; i < len(cs.Public); i++ { // placeholders
+		l[i] = solution[i]
+		r[i] = s0
+		o[i] = s0
+	}
+	offset := len(cs.Public)
+	nbConstraints := cs.GetNbConstraints()
+
+	var sparseR1C constraint.SparseR1C
+	j := 0
+	for _, inst := range cs.Instructions {
+		blueprint := cs.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
+
+			l[offset+j] = solution[sparseR1C.L.WireID()]
+			r[offset+j] = solution[sparseR1C.R.WireID()]
+			o[offset+j] = solution[sparseR1C.O.WireID()]
+			j++
+		} else {
+			// TODO need to handle block of constraints.
+			// panic("not implemented")
+		}
+	}
+
+	offset += nbConstraints
+
+	for i := 0; i < s-offset; i++ { // offset to reach 2**n constraints (where the id of l,r,o is 0, so we assign solution[0])
+		l[offset+i] = s0
+		r[offset+i] = s0
+		o[offset+i] = s0
+	}
+
+	return l, r, o
+
 }
