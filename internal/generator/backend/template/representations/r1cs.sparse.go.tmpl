@@ -476,12 +476,13 @@ func (cs *SparseR1CS) GetConstraints() ([]constraint.SparseR1C, constraint.Resol
 
 	toReturn := make([]constraint.SparseR1C, 0, cs.GetNbConstraints())
 	
-	var sparseR1C constraint.SparseR1C
 	for _, inst := range cs.Instructions {
 		blueprint := cs.Blueprints[inst.BlueprintID]
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			var sparseR1C constraint.SparseR1C
 			calldata := cs.CallData[inst.StartCallData:inst.StartCallData+uint64(blueprint.NbInputs())]
 			bc.DecompressSparseR1C(&sparseR1C, calldata)	
+			toReturn = append(toReturn, sparseR1C)	 
 		} else {
 			panic("not implemented")
 		}

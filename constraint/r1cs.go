@@ -29,7 +29,7 @@ type R1CS interface {
 	// This does not check for validity of the constraint.
 	// If a debugInfo parameter is provided, it will be appended to the debug info structure
 	// and will grow the memory usage of the constraint system.
-	AddConstraint(r1c R1C, debugInfo ...DebugInfo) int
+	AddConstraint(r1c R1C, bID BlueprintID, debugInfo ...DebugInfo) int
 
 	// GetConstraints return the list of R1C and a helper for pretty printing.
 	// See StringBuilder for more info.

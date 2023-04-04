@@ -68,6 +68,8 @@ type builder struct {
 	// buffers used to do in place api.MAC
 	mbuf1 expr.LinearExpression
 	mbuf2 expr.LinearExpression
+
+	genericGate constraint.BlueprintID
 }
 
 // initialCapacity has quite some impact on frontend performance, especially on large circuits size
@@ -115,6 +117,8 @@ func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 
 	builder.tOne = builder.cs.One()
 	builder.cs.AddPublicVariable("1")
+
+	builder.genericGate = builder.cs.RegisterBlueprint(&constraint.BlueprintGenericR1C{})
 
 	return &builder
 }
@@ -446,7 +450,7 @@ func (builder *builder) compress(le expr.LinearExpression) expr.LinearExpression
 
 	one := builder.cstOne()
 	t := builder.newInternalVariable()
-	builder.cs.AddConstraint(builder.newR1C(le, one, t))
+	builder.cs.AddConstraint(builder.newR1C(le, one, t), builder.genericGate)
 	return t
 }
 

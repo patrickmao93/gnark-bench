@@ -5,6 +5,11 @@ type Blueprint interface {
 	NbConstraints() int
 }
 
+type BlueprintR1C interface {
+	CompressR1C(c *R1C) []uint32
+	DecompressR1C(into *R1C, calldata []uint32)
+}
+
 type BlueprintSparseR1C interface {
 	CompressSparseR1C(c *SparseR1C) []uint32
 	DecompressSparseR1C(into *SparseR1C, calldata []uint32)
@@ -18,8 +23,6 @@ type BlueprintSparseR1CBlock interface {
 type BlueprintHint interface {
 	CompressHint()
 }
-
-const BlueprintGenericSparseR1CID = BlueprintID(42)
 
 type BlueprintGenericSparseR1C struct {
 }
@@ -65,6 +68,56 @@ func (b *BlueprintGenericSparseR1C) DecompressSparseR1C(c *SparseR1C, calldata [
 	c.M[1].VID = c.R.VID
 	c.K = int(calldata[8])
 	c.Commitment = CommitmentConstraint(calldata[9])
+}
+
+type BlueprintGenericR1C struct {
+}
+
+func (b *BlueprintGenericR1C) NbInputs() int {
+	return -1
+}
+func (b *BlueprintGenericR1C) NbConstraints() int {
+	return 1
+}
+
+func (b *BlueprintGenericR1C) CompressR1C(c *R1C) []uint32 {
+	nbInputs := 3 + 2*(len(c.L)+len(c.R)+len(c.O))
+	r := make([]uint32, 0, nbInputs)
+	r = append(r, uint32(nbInputs))
+	r = append(r, uint32(len(c.L)), uint32(len(c.R)))
+	for _, t := range c.L {
+		r = append(r, uint32(t.CoeffID()), uint32(t.WireID()))
+	}
+	for _, t := range c.R {
+		r = append(r, uint32(t.CoeffID()), uint32(t.WireID()))
+	}
+	for _, t := range c.O {
+		r = append(r, uint32(t.CoeffID()), uint32(t.WireID()))
+	}
+	return r
+}
+
+func (b *BlueprintGenericR1C) DecompressR1C(c *R1C, calldata []uint32) {
+	c.L = c.L[:0]
+	c.R = c.R[:0]
+	c.O = c.O[:0]
+	// ignore j == 0 ; contains nb inputs
+	lenL := int(calldata[1])
+	lenR := int(calldata[2])
+	j := 3
+	for i := 0; i < lenL; i++ {
+		c.L = append(c.L, Term{CID: calldata[j], VID: calldata[j+1]})
+		j += 2
+	}
+	for i := 0; i < lenR; i++ {
+		c.R = append(c.R, Term{CID: calldata[j], VID: calldata[j+1]})
+		j += 2
+	}
+	for j < len(calldata) {
+		c.O = append(c.O, Term{CID: calldata[j], VID: calldata[j+1]})
+		j += 2
+	}
+
 }
 
 // Next steps:
