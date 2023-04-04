@@ -65,6 +65,8 @@ type builder struct {
 
 	// frequently used coefficients
 	tOne, tMinusOne constraint.Coeff
+
+	genericGate constraint.BlueprintID
 }
 
 // initialCapacity has quite some impact on frontend performance, especially on large circuits size
@@ -105,6 +107,8 @@ func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 
 	b.tOne = b.cs.One()
 	b.tMinusOne = b.cs.FromInterface(-1)
+
+	b.genericGate = b.cs.RegisterBlueprint(&constraint.BlueprintGenericSparseR1C{})
 
 	return &b
 }
@@ -160,7 +164,7 @@ func (builder *builder) addPlonkConstraint(c sparseR1C, debug ...constraint.Debu
 	V := builder.cs.MakeTerm(&builder.tOne, c.xb)
 	K := builder.cs.MakeTerm(&c.qC, 0)
 	K.MarkConstant()
-	builder.cs.AddSparseR1C(constraint.SparseR1C{L: L, R: R, O: O, M: [2]constraint.Term{U, V}, K: K.CoeffID(), Commitment: c.commitment}, debug...)
+	builder.cs.AddSparseR1C(constraint.SparseR1C{L: L, R: R, O: O, M: [2]constraint.Term{U, V}, K: K.CoeffID(), Commitment: c.commitment}, builder.genericGate, debug...)
 }
 
 // newInternalVariable creates a new wire, appends it on the list of wires of the circuit, sets

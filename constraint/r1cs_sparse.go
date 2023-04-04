@@ -22,10 +22,9 @@ import (
 
 type SparseR1CS interface {
 	ConstraintSystem
-	TMPCoeffGetter
 
 	// TODO @gbotrel temporary for refactor
-	AddSparseR1C(c SparseR1C, debugInfo ...DebugInfo) int
+	AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugInfo) int
 
 	// AddConstraint adds a constraint to the sytem and returns its id
 	// This does not check for validity of the constraint.

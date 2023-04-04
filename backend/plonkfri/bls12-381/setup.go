@@ -160,13 +160,13 @@ func Setup(spr *cs.SparseR1CS) (*ProvingKey, *VerifyingKey, error) {
 	offset := len(spr.Public)
 
 	j := 0
-	var sparseR1C constraint.SparseR1C
-	for i := 0; i < len(spr.Instructions); i++ {
-		b := spr.Instructions[i].Blueprint()
-		// for each instruction, get its constraints.
-		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
 
+	var sparseR1C constraint.SparseR1C
+	for _, inst := range spr.Instructions {
+		blueprint := spr.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
 			pk.EvaluationQlDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.L.CoeffID()])
 			pk.EvaluationQrDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.R.CoeffID()])
 			pk.EvaluationQmDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.M[0].CoeffID()]).
@@ -176,11 +176,10 @@ func Setup(spr *cs.SparseR1CS) (*ProvingKey, *VerifyingKey, error) {
 			pk.CQkIncomplete[offset+j].Set(&pk.LQkIncompleteDomainSmall[offset+j])
 
 			j++
-		}
-	}
 
-	if j != nbConstraints {
-		panic("invalid nb constraints")
+		} else {
+			panic("not implemented")
+		}
 	}
 
 	pk.Domain[0].FFTInverse(pk.EvaluationQlDomainBigBitReversed[:pk.Domain[0].Cardinality], fft.DIF)
@@ -276,17 +275,18 @@ func buildPermutation(spr *cs.SparseR1CS, pk *ProvingKey) {
 
 	j := 0
 	var sparseR1C constraint.SparseR1C
-	for i := 0; i < len(spr.Instructions); i++ {
-		b := spr.Instructions[i].Blueprint()
-		// for each instruction, get its constraints.
-		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, spr.Instructions[i], &spr.NEWCS)
-
+	for _, inst := range spr.Instructions {
+		blueprint := spr.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
 			lro[offset+j] = sparseR1C.L.WireID()
 			lro[sizeSolution+offset+j] = sparseR1C.R.WireID()
 			lro[2*sizeSolution+offset+j] = sparseR1C.O.WireID()
-
 			j++
+
+		} else {
+			panic("not implemented")
 		}
 	}
 

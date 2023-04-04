@@ -27,7 +27,6 @@ import (
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
-	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/internal/backend/ioutils"
 	"github.com/consensys/gnark/logger"
 
@@ -89,10 +88,10 @@ func (c *SparseR1CS) Solve(witness witness.Witness, opts ...solver.Option) (any,
 
 // evaluateLROSmallDomain extracts the solution l, r, o, and returns it in lagrange form.
 // solution = [ public | secret | internal ]
-func (c *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element, []fr.Element, []fr.Element) {
+func (cs *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element, []fr.Element, []fr.Element) {
 
 	//s := int(pk.Domain[0].Cardinality)
-	s := c.GetNbConstraints() + len(c.Public) // len(spr.Public) is for the placeholder constraints
+	s := cs.GetNbConstraints() + len(cs.Public) // len(spr.Public) is for the placeholder constraints
 	s = int(ecc.NextPowerOfTwo(uint64(s)))
 
 	var l, r, o []fr.Element
@@ -101,35 +100,31 @@ func (c *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element
 	o = make([]fr.Element, s)
 	s0 := solution[0]
 
-	for i := 0; i < len(c.Public); i++ { // placeholders
+	for i := 0; i < len(cs.Public); i++ { // placeholders
 		l[i] = solution[i]
 		r[i] = s0
 		o[i] = s0
 	}
-	offset := len(c.Public)
-	nbConstraints := c.GetNbConstraints()
-	j := 0
+	offset := len(cs.Public)
+	nbConstraints := cs.GetNbConstraints()
 
 	var sparseR1C constraint.SparseR1C
-	for i := 0; i < len(c.Instructions); i++ {
-		b := c.Instructions[i].Blueprint()
-		// for each instruction, get its constraints.
-		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, c.Instructions[i], &c.NEWCS)
+	j := 0
+	for _, inst := range cs.Instructions {
+		blueprint := cs.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
 
 			l[offset+j] = solution[sparseR1C.L.WireID()]
 			r[offset+j] = solution[sparseR1C.R.WireID()]
 			o[offset+j] = solution[sparseR1C.O.WireID()]
-
 			j++
+		} else {
+			panic("not implemented")
 		}
+	}
 
-	}
-	if debug.Debug {
-		if j != nbConstraints {
-			panic("invalid number of constraints")
-		}
-	}
 	offset += nbConstraints
 
 	for i := 0; i < s-offset; i++ { // offset to reach 2**n constraints (where the id of l,r,o is 0, so we assign solution[0])
@@ -191,14 +186,14 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 	}
 
 	// solve
-	nbConstraints := cs.GetNbConstraints()
 	j := 0
 	var sparseR1C constraint.SparseR1C
-	for i := 0; i < len(cs.Instructions); i++ {
-		b := cs.Instructions[i].Blueprint()
-		// for each instruction, get its constraints.
-		for k := 0; k < b.NbConstraints(); k++ {
-			b.WriteSparseR1C(&sparseR1C, k, cs.Instructions[i], &cs.NEWCS)
+
+	for _, inst := range cs.Instructions {
+		blueprint := cs.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
 
 			if err := cs.solveConstraint(sparseR1C, &solution, coefficientsNegInv); err != nil {
 				return solution.values, &UnsatisfiedConstraintError{CID: j, Err: err}
@@ -215,10 +210,9 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 
 			// b.SolveFor(k, cs.Instructions[i], &solution, cs)
 			j++
+		} else {
+			panic("not implemented")
 		}
-	}
-	if j != nbConstraints {
-		panic("here invalid nb constraints")
 	}
 
 	// if err := cs.parallelSolve(&solution, coefficientsNegInv); err != nil {
@@ -488,15 +482,15 @@ func (cs *SparseR1CS) GetConstraints() ([]constraint.SparseR1C, constraint.Resol
 
 	toReturn := make([]constraint.SparseR1C, 0, cs.GetNbConstraints())
 
-	for i := 0; i < len(cs.Instructions); i++ {
-		b := cs.Instructions[i].Blueprint()
-		// for each instruction, get its constraints.
-		for k := 0; k < b.NbConstraints(); k++ {
-			var sparseR1C constraint.SparseR1C
-			b.WriteSparseR1C(&sparseR1C, k, cs.Instructions[i], &cs.NEWCS)
-			toReturn = append(toReturn, sparseR1C)
+	var sparseR1C constraint.SparseR1C
+	for _, inst := range cs.Instructions {
+		blueprint := cs.Blueprints[inst.BlueprintID]
+		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
+			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
+			bc.DecompressSparseR1C(&sparseR1C, calldata)
+		} else {
+			panic("not implemented")
 		}
-
 	}
 	return toReturn, cs
 }

@@ -72,10 +72,7 @@ type ConstraintSystem interface {
 	// This is experimental.
 	CheckUnconstrainedWires() error
 
-	AddInstruction(blueprint Blueprint, calldata []uint32) int
-
-	// GetConstraint return a pointer to the constraint at index i, or nil if out of bounds.
-	GetInstruction(i int) Instruction
+	RegisterBlueprint(b Blueprint) BlueprintID
 }
 
 type Iterable interface {
@@ -137,6 +134,8 @@ type System struct {
 	lbHints     map[int]struct{} `cbor:"-"` // hints we processed in current round
 
 	CommitmentInfo Commitment
+
+	Blueprints []Blueprint
 }
 
 // NewSystem initialize the common structure among constraint system
@@ -152,6 +151,11 @@ func NewSystem(scalarField *big.Int) System {
 		bitLen:             scalarField.BitLen(),
 		lbHints:            map[int]struct{}{},
 	}
+}
+
+func (system *System) RegisterBlueprint(b Blueprint) BlueprintID {
+	system.Blueprints = append(system.Blueprints, b)
+	return BlueprintID(len(system.Blueprints) - 1)
 }
 
 func (system *System) GetNbSecretVariables() int {
