@@ -277,7 +277,8 @@ func BuildTrace(spr *cs.SparseR1CS, pt *Trace) {
 			j++
 
 		} else {
-			panic("not implemented")
+			// TODO @gbotrel blocks
+			// panic("not implemented")
 		}
 	}
 
@@ -408,7 +409,7 @@ func buildPermutation(spr *cs.SparseR1CS, pt *Trace, nbVariables int) {
 			j++
 
 		} else {
-			panic("not implemented")
+			// TODO @gbotrel blocks
 		}
 	}
 

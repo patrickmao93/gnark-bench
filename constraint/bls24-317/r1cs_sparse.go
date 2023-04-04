@@ -35,7 +35,7 @@ import (
 
 // SparseR1CS represents a Plonk like circuit
 type SparseR1CS struct {
-	constraint.NEWCS
+	constraint.System
 	CoeffTable
 	arithEngine
 }
@@ -43,11 +43,7 @@ type SparseR1CS struct {
 // NewSparseR1CS returns a new SparseR1CS and sets r1cs.Coefficient (fr.Element) from provided big.Int values
 func NewSparseR1CS(capacity int) *SparseR1CS {
 	cs := SparseR1CS{
-		NEWCS: constraint.NEWCS{
-			System:       constraint.NewSystem(fr.Modulus()),
-			Instructions: make([]constraint.Instruction, 0, capacity),
-			CallData:     make([]uint32, 0, capacity*2),
-		},
+		System:     constraint.NewSystem(fr.Modulus(), capacity),
 		CoeffTable: newCoeffTable(capacity / 10),
 	}
 
@@ -121,7 +117,8 @@ func (cs *SparseR1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Elemen
 			o[offset+j] = solution[sparseR1C.O.WireID()]
 			j++
 		} else {
-			panic("not implemented")
+			// TODO need to handle block of constraints.
+			// panic("not implemented")
 		}
 	}
 
@@ -188,6 +185,7 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 	// solve
 	j := 0
 	var sparseR1C constraint.SparseR1C
+	var hm constraint.HintMapping
 
 	for _, inst := range cs.Instructions {
 		blueprint := cs.Blueprints[inst.BlueprintID]
@@ -210,6 +208,11 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 
 			// b.SolveFor(k, cs.Instructions[i], &solution, cs)
 			j++
+		} else if bc, ok := blueprint.(constraint.BlueprintHint); ok {
+			bc.DecompressHint(&hm, cs.GetCallData(inst))
+			if err := solution.solveWithHint(hm); err != nil {
+				return solution.values, err
+			}
 		} else {
 			panic("not implemented")
 		}
@@ -351,47 +354,24 @@ func (cs *SparseR1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, er
 // 	return nil
 // }
 
-// computeHints computes wires associated with a hint function, if any
+// findUnsolvedWire computes wires associated with a hint function, if any
 // if there is no remaining wire to solve, returns -1
 // else returns the wire position (L -> 0, R -> 1, O -> 2)
-func (cs *SparseR1CS) computeHints(c constraint.SparseR1C, solution *solution) (int, error) {
-	r := -1
+func (cs *SparseR1CS) findUnsolvedWire(c constraint.SparseR1C, solution *solution) int {
 	lID, rID, oID := c.L.WireID(), c.R.WireID(), c.O.WireID()
 
 	if (c.L.CoeffID() != 0 || c.M[0].CoeffID() != 0) && !solution.solved[lID] {
-		// check if it's a hint
-		if hint, ok := cs.MHints[lID]; ok {
-			if err := solution.solveWithHint(lID, hint); err != nil {
-				return -1, err
-			}
-		} else {
-			r = 0
-		}
-
+		return 0
 	}
 
 	if (c.R.CoeffID() != 0 || c.M[1].CoeffID() != 0) && !solution.solved[rID] {
-		// check if it's a hint
-		if hint, ok := cs.MHints[rID]; ok {
-			if err := solution.solveWithHint(rID, hint); err != nil {
-				return -1, err
-			}
-		} else {
-			r = 1
-		}
+		return 1
 	}
 
 	if (c.O.CoeffID() != 0) && !solution.solved[oID] {
-		// check if it's a hint
-		if hint, ok := cs.MHints[oID]; ok {
-			if err := solution.solveWithHint(oID, hint); err != nil {
-				return -1, err
-			}
-		} else {
-			r = 2
-		}
+		return 2
 	}
-	return r, nil
+	return -1
 }
 
 // solveConstraint solve any unsolved wire in given constraint and update the solution
@@ -403,10 +383,7 @@ func (cs *SparseR1CS) solveConstraint(c constraint.SparseR1C, solution *solution
 		return nil // these are there for enforcing the correctness of the commitment and can be skipped in solving time
 	}
 
-	lro, err := cs.computeHints(c, solution)
-	if err != nil {
-		return err
-	}
+	lro := cs.findUnsolvedWire(c, solution)
 	if lro == -1 {
 		// no unsolved wire
 		// can happen if the constraint contained only hint wires.

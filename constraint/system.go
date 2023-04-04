@@ -72,7 +72,7 @@ type ConstraintSystem interface {
 	// This is experimental.
 	CheckUnconstrainedWires() error
 
-	RegisterBlueprint(b Blueprint) BlueprintID
+	AddBlueprint(b Blueprint) BlueprintID
 }
 
 type Iterable interface {
@@ -135,12 +135,17 @@ type System struct {
 
 	CommitmentInfo Commitment
 
-	Blueprints []Blueprint
+	Blueprints    []Blueprint
+	Instructions  []Instruction
+	CallData      []uint32 // huge slice.
+	NbConstraints int      // can be != than len(instructions
+
+	genericHint BlueprintID
 }
 
 // NewSystem initialize the common structure among constraint system
-func NewSystem(scalarField *big.Int) System {
-	return System{
+func NewSystem(scalarField *big.Int, capacity int) System {
+	system := System{
 		SymbolTable:        debug.NewSymbolTable(),
 		MDebug:             map[int]int{},
 		GnarkVersion:       gnark.Version.String(),
@@ -150,10 +155,14 @@ func NewSystem(scalarField *big.Int) System {
 		q:                  new(big.Int).Set(scalarField),
 		bitLen:             scalarField.BitLen(),
 		lbHints:            map[int]struct{}{},
+		Instructions:       make([]Instruction, 0, capacity),
+		CallData:           make([]uint32, 0, capacity*2),
 	}
+	system.genericHint = system.AddBlueprint(&BlueprintGenericHint{})
+	return system
 }
 
-func (system *System) RegisterBlueprint(b Blueprint) BlueprintID {
+func (system *System) AddBlueprint(b Blueprint) BlueprintID {
 	system.Blueprints = append(system.Blueprints, b)
 	return BlueprintID(len(system.Blueprints) - 1)
 }
@@ -257,11 +266,15 @@ func (system *System) AddSolverHint(f solver.Hint, input []LinearExpression, nbO
 
 	// associate these wires with the solver hint
 	hm := HintMapping{HintID: hintUUID, Inputs: input, Outputs: internalVariables}
-	system.HintMappings = append(system.HintMappings, hm)
-	n := len(system.HintMappings) - 1
-	for _, vID := range internalVariables {
-		system.MHints[vID] = n
-	}
+
+	instruction := system.compressHint(hm, system.genericHint)
+	system.Instructions = append(system.Instructions, instruction)
+
+	// system.HintMappings = append(system.HintMappings, hm)
+	// n := len(system.HintMappings) - 1
+	// for _, vID := range internalVariables {
+	// 	system.MHints[vID] = n
+	// }
 
 	return
 }

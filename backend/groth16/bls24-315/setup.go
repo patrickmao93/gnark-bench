@@ -404,7 +404,7 @@ func setupABC(r1cs *cs.R1CS, domain *fft.Domain, toxicWaste toxicWaste) (A []fr.
 
 			j++
 		} else {
-			panic("not implemented")
+			// TODO @gbotrel blocks
 		}
 	}
 

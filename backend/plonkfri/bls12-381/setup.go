@@ -178,7 +178,7 @@ func Setup(spr *cs.SparseR1CS) (*ProvingKey, *VerifyingKey, error) {
 			j++
 
 		} else {
-			panic("not implemented")
+			// TODO @gbotrel blocks
 		}
 	}
 
@@ -286,7 +286,7 @@ func buildPermutation(spr *cs.SparseR1CS, pk *ProvingKey) {
 			j++
 
 		} else {
-			panic("not implemented")
+			// TODO @gbotrel blocks
 		}
 	}
 

@@ -118,7 +118,7 @@ func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 	builder.tOne = builder.cs.One()
 	builder.cs.AddPublicVariable("1")
 
-	builder.genericGate = builder.cs.RegisterBlueprint(&constraint.BlueprintGenericR1C{})
+	builder.genericGate = builder.cs.AddBlueprint(&constraint.BlueprintGenericR1C{})
 
 	return &builder
 }

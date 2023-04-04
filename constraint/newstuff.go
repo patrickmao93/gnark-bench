@@ -1,18 +1,10 @@
 package constraint
 
-type NEWCS struct {
-	System
-	Instructions  []Instruction
-	CallData      []uint32 // huge slice.
-	NbConstraints int      // can be != than len(instructions
-
-}
-
-func (cs *NEWCS) GetCallData(instruction Instruction) []uint32 {
+func (cs *System) GetCallData(instruction Instruction) []uint32 {
 	blueprint := cs.Blueprints[instruction.BlueprintID]
 	nbInputs := blueprint.NbInputs()
 	if nbInputs < 0 {
-		// happens with R1C of unknown size
+		// happens with R1C of unknown size or hints
 		nbInputs = int(cs.CallData[instruction.StartCallData])
 	}
 	return cs.CallData[instruction.StartCallData : instruction.StartCallData+uint64(nbInputs)]
@@ -24,7 +16,7 @@ type Instruction struct {
 	StartCallData uint64 // call data slice (end can be returned by Blueprint)
 }
 
-func (cs *NEWCS) AddConstraint(c R1C, bID BlueprintID, debugInfo ...DebugInfo) int {
+func (cs *System) AddConstraint(c R1C, bID BlueprintID, debugInfo ...DebugInfo) int {
 	instruction := cs.compressR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 	cs.NbConstraints += 1 // should be 1 here
@@ -32,7 +24,7 @@ func (cs *NEWCS) AddConstraint(c R1C, bID BlueprintID, debugInfo ...DebugInfo) i
 	return cs.NbConstraints - 1
 }
 
-func (cs *NEWCS) AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugInfo) int {
+func (cs *System) AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugInfo) int {
 	instruction := cs.compressSparseR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 	cs.NbConstraints += 1 // should be 1 here
@@ -40,7 +32,7 @@ func (cs *NEWCS) AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugIn
 	return cs.NbConstraints - 1
 }
 
-func (cs *NEWCS) compressSparseR1C(c *SparseR1C, bID BlueprintID) Instruction {
+func (cs *System) compressSparseR1C(c *SparseR1C, bID BlueprintID) Instruction {
 	inst := Instruction{
 		StartCallData: uint64(len(cs.CallData)),
 		BlueprintID:   bID,
@@ -51,7 +43,7 @@ func (cs *NEWCS) compressSparseR1C(c *SparseR1C, bID BlueprintID) Instruction {
 	return inst
 }
 
-func (cs *NEWCS) compressR1C(c *R1C, bID BlueprintID) Instruction {
+func (cs *System) compressR1C(c *R1C, bID BlueprintID) Instruction {
 	inst := Instruction{
 		StartCallData: uint64(len(cs.CallData)),
 		BlueprintID:   bID,
@@ -62,12 +54,23 @@ func (cs *NEWCS) compressR1C(c *R1C, bID BlueprintID) Instruction {
 	return inst
 }
 
+func (cs *System) compressHint(hm HintMapping, bID BlueprintID) Instruction {
+	inst := Instruction{
+		StartCallData: uint64(len(cs.CallData)),
+		BlueprintID:   bID,
+	}
+	blueprint := cs.Blueprints[bID]
+	calldata := blueprint.(BlueprintHint).CompressHint(hm)
+	cs.CallData = append(cs.CallData, calldata...)
+	return inst
+}
+
 // GetNbConstraints returns the number of constraints
-func (cs *NEWCS) GetNbConstraints() int {
+func (cs *System) GetNbConstraints() int {
 	return cs.NbConstraints
 }
 
-func (cs *NEWCS) CheckUnconstrainedWires() error {
+func (cs *System) CheckUnconstrainedWires() error {
 	// TODO @gbotrel
 	return nil
 }

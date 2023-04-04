@@ -36,7 +36,7 @@ import (
 
 // R1CS describes a set of R1CS constraint
 type R1CS struct {
-	constraint.NEWCS
+	constraint.System
 	CoeffTable
 	arithEngine
 }
@@ -46,11 +46,7 @@ type R1CS struct {
 // capacity pre-allocates memory for capacity nbConstraints
 func NewR1CS(capacity int) *R1CS {
 	r := R1CS{
-		NEWCS: constraint.NEWCS{
-			System:       constraint.NewSystem(fr.Modulus()),
-			Instructions: make([]constraint.Instruction, 0, capacity),
-			CallData:     make([]uint32, 0, capacity*2),
-		},
+		System:     constraint.NewSystem(fr.Modulus(), capacity),
 		CoeffTable: newCoeffTable(capacity / 10),
 	}
 	return &r
@@ -149,6 +145,7 @@ func (cs *R1CS) solve(witness, a, b, c fr.Vector, opt solver.Config) (fr.Vector,
 
 	i := 0
 	var r1c constraint.R1C
+	var hm constraint.HintMapping
 
 	for _, inst := range cs.Instructions {
 		blueprint := cs.Blueprints[inst.BlueprintID]
@@ -169,6 +166,11 @@ func (cs *R1CS) solve(witness, a, b, c fr.Vector, opt solver.Config) (fr.Vector,
 				return solution.values, &UnsatisfiedConstraintError{CID: i, Err: err, DebugInfo: debugInfo}
 			}
 			i++
+		} else if bc, ok := blueprint.(constraint.BlueprintHint); ok {
+			bc.DecompressHint(&hm, cs.GetCallData(inst))
+			if err := solution.solveWithHint(hm); err != nil {
+				return solution.values, err
+			}
 		} else {
 			panic("not implemented")
 		}
@@ -347,15 +349,15 @@ func (cs *R1CS) solveConstraint(r constraint.R1C, solution *solution, a, b, c *f
 				continue
 			}
 
-			// first we check if this is a hint wire
-			if hint, ok := cs.MHints[vID]; ok {
-				if err := solution.solveWithHint(vID, hint); err != nil {
-					return err
-				}
-				// now that the wire is saved, accumulate it into a, b or c
-				solution.accumulateInto(t, val)
-				continue
-			}
+			// // first we check if this is a hint wire
+			// if hint, ok := cs.MHints[vID]; ok {
+			// 	if err := solution.solveWithHint(vID, hint); err != nil {
+			// 		return err
+			// 	}
+			// 	// now that the wire is saved, accumulate it into a, b or c
+			// 	solution.accumulateInto(t, val)
+			// 	continue
+			// }
 
 			if loc != 0 {
 				panic("found more than one wire to instantiate")
