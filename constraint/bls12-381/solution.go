@@ -125,33 +125,30 @@ func (s *solution) computeTerm(t constraint.Term) fr.Element {
 func (s *solution) accumulateInto(t constraint.Term, r *fr.Element) {
 	cID := t.CoeffID()
 	vID := t.WireID()
-	var res fr.Element
-	res.Mul(&s.coefficients[cID], &s.values[vID])
-	r.Add(r, &res)
 
-	// // if t.IsConstant() {
-	// // 	// needed for logs, we may want to not put this in the hot path if we need to
-	// // 	// optimize constraint system solver further.
-	// // 	r.Add(r, &s.coefficients[cID])
-	// // 	return
-	// // }
-
-	// switch cID {
-	// case constraint.CoeffIdZero:
+	// if t.IsConstant() {
+	// 	// needed for logs, we may want to not put this in the hot path if we need to
+	// 	// optimize constraint system solver further.
+	// 	r.Add(r, &s.coefficients[cID])
 	// 	return
-	// case constraint.CoeffIdOne:
-	// 	r.Add(r, &s.values[vID])
-	// case constraint.CoeffIdTwo:
-	// 	var res fr.Element
-	// 	res.Double(&s.values[vID])
-	// 	r.Add(r, &res)
-	// case constraint.CoeffIdMinusOne:
-	// 	r.Sub(r, &s.values[vID])
-	// default:
-	// 	var res fr.Element
-	// 	res.Mul(&s.coefficients[cID], &s.values[vID])
-	// 	r.Add(r, &res)
 	// }
+
+	switch cID {
+	case constraint.CoeffIdZero:
+		return
+	case constraint.CoeffIdOne:
+		r.Add(r, &s.values[vID])
+	case constraint.CoeffIdTwo:
+		var res fr.Element
+		res.Double(&s.values[vID])
+		r.Add(r, &res)
+	case constraint.CoeffIdMinusOne:
+		r.Sub(r, &s.values[vID])
+	default:
+		var res fr.Element
+		res.Mul(&s.coefficients[cID], &s.values[vID])
+		r.Add(r, &res)
+	}
 }
 
 // solveHint compute solution.values[vID] using provided solver hint
