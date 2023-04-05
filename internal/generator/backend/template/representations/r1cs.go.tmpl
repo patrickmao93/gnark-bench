@@ -169,7 +169,7 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 	return solution.values, nil
 }
 
-func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution) error {
+func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution, tmpR1C *constraint.R1C) error {
 	blueprint := cs.Blueprints[inst.BlueprintID]
 
 	if bc, ok := blueprint.(constraint.BlueprintHint); ok {
@@ -180,11 +180,10 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 
 	if cs.isR1CS {
 		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
-			var r1c constraint.R1C
 			// TODO @gbotrel use pool object here for the R1C
-			bc.DecompressR1C(&r1c, cs.GetCallData(inst))
+			bc.DecompressR1C(tmpR1C, cs.GetCallData(inst))
 			cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
-			return cs.solveConstraint(cID, &r1c, solution, &cs.a[cID],&cs.b[cID],&cs.c[cID])
+			return cs.solveConstraint(cID, tmpR1C, solution, &cs.a[cID],&cs.b[cID],&cs.c[cID])
 		} else {
 			panic("not implemented")
 		}
@@ -209,7 +208,7 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 	
 }
 
-func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
+func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C) error) error {
 	// minWorkPerCPU is the minimum target number of constraint a task should hold
 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
 	// sequentially without sync.  
@@ -231,11 +230,12 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
 	// a task is a slice of constraint indexes to be solved
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go func() {
+			var r1c constraint.R1C
 			for t := range chTasks {
 				for _, i := range t {
 					// for each constraint in the task, solve it.
 					// if err := cs.solveInstruction(cs.Instructions[i], solution, a, b, c); err != nil {
-					if err := fn(cs.Instructions[i]); err != nil {
+					if err := fn(cs.Instructions[i], &r1c); err != nil {
 						// var debugInfo *string 
 						// if dID, ok := cs.MDebug[i]; ok {
 						// 	debugInfo = new(string)
@@ -258,6 +258,7 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
 	}()
 
 	// for each level, we push the tasks
+	var r1c constraint.R1C
 	for _, level := range cs.Levels {
 
 		// max CPU to use 
@@ -266,7 +267,7 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
 		if maxCPU <= 1.0 {
 			// we do it sequentially 
 			for _, i := range level {
-				if err := fn(cs.Instructions[i]); err != nil {
+				if err := fn(cs.Instructions[i], &r1c); err != nil {
 					return err 
 				}
 			}
@@ -319,8 +320,8 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction) error) error {
 }
 
 func (cs *R1CS) parallelSolve(solution *solution) error {
-	solve := func(instruction constraint.Instruction) error {
-		return cs.solveInstruction(instruction, solution)
+	solve := func(instruction constraint.Instruction, r1c *constraint.R1C) error {
+		return cs.solveInstruction(instruction, solution, r1c)
 	}
 	return cs.parallelProcess(solve)
 }
