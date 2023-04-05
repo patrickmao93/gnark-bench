@@ -68,6 +68,7 @@ type builder struct {
 	tOne, tMinusOne constraint.Coeff
 
 	genericGate constraint.BlueprintID
+	mulGate     constraint.BlueprintID
 }
 
 // initialCapacity has quite some impact on frontend performance, especially on large circuits size
@@ -110,6 +111,7 @@ func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 	b.tMinusOne = b.cs.FromInterface(-1)
 
 	b.genericGate = b.cs.AddBlueprint(&constraint.BlueprintGenericSparseR1C{})
+	b.mulGate = b.cs.AddBlueprint(&constraint.BlueprintSparseR1CMul{})
 
 	return &b
 }
@@ -131,7 +133,7 @@ type sparseR1C struct {
 }
 
 // a * b == c
-func (builder *builder) addMulGate(a, b, c expr.Term, debug ...constraint.DebugInfo) {
+func (builder *builder) addMulGate(a, b, c expr.Term) {
 	qO := builder.tMinusOne
 	if c.Coeff != builder.tOne {
 		// slow path
@@ -141,13 +143,15 @@ func (builder *builder) addMulGate(a, b, c expr.Term, debug ...constraint.DebugI
 	}
 	qM := a.Coeff
 	builder.cs.Mul(&qM, &b.Coeff)
-	builder.addPlonkConstraint(sparseR1C{
-		xa: a.VID,
-		xb: b.VID,
-		xc: c.VID,
-		qM: qM,
-		qO: qO,
-	}, debug...)
+
+	m1 := builder.cs.MakeTerm(&qM, a.VID)
+	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
+	o := builder.cs.MakeTerm(&qO, c.VID)
+	l := builder.cs.MakeTerm(&constraint.Coeff{}, a.VID)
+	r := builder.cs.MakeTerm(&constraint.Coeff{}, b.VID)
+
+	// we put l and r here because... wire id is used in level builder :s
+	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.mulGate)
 }
 
 // addPlonkConstraint adds a sparseR1C to the underlying constraint system

@@ -185,3 +185,38 @@ func (b *BlueprintGenericR1C) DecompressR1C(c *R1C, calldata []uint32) {
 // 3. move the hints
 // 4. restore parallel solver
 // 5. restore debug info ?
+
+type BlueprintSparseR1CMul struct {
+}
+
+func (b *BlueprintSparseR1CMul) NbInputs() int {
+	return 5
+}
+func (b *BlueprintSparseR1CMul) NbConstraints() int {
+	return 1
+}
+
+func (b *BlueprintSparseR1CMul) CompressSparseR1C(c *SparseR1C) []uint32 {
+	return []uint32{
+		c.M[0].CID,
+		c.M[0].VID,
+		// c.M[1].CID,
+		c.M[1].VID,
+		c.O.CID,
+		c.O.VID,
+	}
+}
+
+func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
+	c.Clear()
+
+	c.M[0].CID = calldata[0]
+	c.M[0].VID = calldata[1]
+	c.M[1].CID = CoeffIdOne
+	c.M[1].VID = calldata[2]
+	c.O.CID = calldata[3]
+	c.O.VID = calldata[4]
+
+	c.L.VID = c.M[0].VID
+	c.R.VID = c.M[1].VID
+}
