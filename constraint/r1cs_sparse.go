@@ -24,13 +24,7 @@ type SparseR1CS interface {
 	ConstraintSystem
 
 	// TODO @gbotrel temporary for refactor
-	AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugInfo) int
-
-	// AddConstraint adds a constraint to the sytem and returns its id
-	// This does not check for validity of the constraint.
-	// If a debugInfo parameter is provided, it will be appended to the debug info structure
-	// and will grow the memory usage of the constraint system.
-	// AddConstraint(c SparseR1C, debugInfo ...DebugInfo) int
+	AddSparseR1C(c SparseR1C, bID BlueprintID) int
 
 	// GetConstraints2 return the list of SparseR1C and a helper for pretty printing.
 	// See StringBuilder for more info.

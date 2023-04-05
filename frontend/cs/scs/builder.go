@@ -23,6 +23,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/constraint"
+	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/internal/expr"
 	"github.com/consensys/gnark/frontend/schema"
@@ -150,7 +151,7 @@ func (builder *builder) addMulGate(a, b, c expr.Term, debug ...constraint.DebugI
 }
 
 // addPlonkConstraint adds a sparseR1C to the underlying constraint system
-func (builder *builder) addPlonkConstraint(c sparseR1C, debug ...constraint.DebugInfo) {
+func (builder *builder) addPlonkConstraint(c sparseR1C, debugInfo ...constraint.DebugInfo) {
 	if !c.qM.IsZero() && (c.xa == 0 || c.xb == 0) {
 		// TODO this is internal but not easy to detect; if qM is set, but one or both of xa / xb is not,
 		// since wireID == 0 is a valid wire, it may trigger unexpected behavior.
@@ -164,7 +165,11 @@ func (builder *builder) addPlonkConstraint(c sparseR1C, debug ...constraint.Debu
 	V := builder.cs.MakeTerm(&builder.tOne, c.xb)
 	K := builder.cs.MakeTerm(&c.qC, 0)
 	K.MarkConstant()
-	builder.cs.AddSparseR1C(constraint.SparseR1C{L: L, R: R, O: O, M: [2]constraint.Term{U, V}, K: K.CoeffID(), Commitment: c.commitment}, builder.genericGate, debug...)
+
+	cID := builder.cs.AddSparseR1C(constraint.SparseR1C{L: L, R: R, O: O, M: [2]constraint.Term{U, V}, K: K.CoeffID(), Commitment: c.commitment}, builder.genericGate)
+	if debug.Debug && len(debugInfo) == 1 {
+		builder.cs.AttachDebugInfo(debugInfo[0], []int{cID})
+	}
 }
 
 // newInternalVariable creates a new wire, appends it on the list of wires of the circuit, sets

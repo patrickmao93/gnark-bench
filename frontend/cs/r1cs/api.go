@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/consensys/gnark/debug"
 	"github.com/consensys/gnark/frontend/cs"
 
 	"github.com/consensys/gnark/constraint"
@@ -255,9 +256,12 @@ func (builder *builder) DivUnchecked(i1, i2 frontend.Variable) frontend.Variable
 
 	if !v2Constant {
 		res := builder.newInternalVariable()
-		debug := builder.newDebugInfo("div", v1, "/", v2, " == ", res)
 		// note that here we don't ensure that divisor is != 0
-		builder.cs.AddConstraint(builder.newR1C(v2, res, v1), builder.genericGate, debug)
+		cID := builder.cs.AddConstraint(builder.newR1C(v2, res, v1), builder.genericGate)
+		if debug.Debug {
+			debug := builder.newDebugInfo("div", v1, "/", v2, " == ", res)
+			builder.cs.AttachDebugInfo(debug, []int{cID})
+		}
 		return res
 	}
 
@@ -330,8 +334,11 @@ func (builder *builder) Inverse(i1 frontend.Variable) frontend.Variable {
 	// allocate resulting frontend.Variable
 	res := builder.newInternalVariable()
 
-	debug := builder.newDebugInfo("inverse", vars[0], "*", res, " == 1")
-	builder.cs.AddConstraint(builder.newR1C(res, vars[0], builder.cstOne()), builder.genericGate, debug)
+	cID := builder.cs.AddConstraint(builder.newR1C(res, vars[0], builder.cstOne()), builder.genericGate)
+	if debug.Debug {
+		debug := builder.newDebugInfo("inverse", vars[0], "*", res, " == 1")
+		builder.cs.AttachDebugInfo(debug, []int{cID})
+	}
 
 	return res
 }

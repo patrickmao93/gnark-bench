@@ -16,7 +16,7 @@ type Instruction struct {
 	StartCallData    uint64 // call data slice (end can be returned by Blueprint)
 }
 
-func (cs *System) AddConstraint(c R1C, bID BlueprintID, debugInfo ...DebugInfo) int {
+func (cs *System) AddConstraint(c R1C, bID BlueprintID) int {
 	instruction := cs.compressR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 
@@ -25,7 +25,7 @@ func (cs *System) AddConstraint(c R1C, bID BlueprintID, debugInfo ...DebugInfo) 
 	return cs.NbConstraints - 1
 }
 
-func (cs *System) AddSparseR1C(c SparseR1C, bID BlueprintID, debugInfo ...DebugInfo) int {
+func (cs *System) AddSparseR1C(c SparseR1C, bID BlueprintID) int {
 	instruction := cs.compressSparseR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 
@@ -69,7 +69,6 @@ func (cs *System) compressHint(hm HintMapping, bID BlueprintID) Instruction {
 	blueprint := cs.Blueprints[bID]
 	calldata := blueprint.(BlueprintHint).CompressHint(hm)
 	cs.CallData = append(cs.CallData, calldata...)
-	// cs.NbConstraints += blueprint.NbConstraints() // should be 0
 	return inst
 }
 

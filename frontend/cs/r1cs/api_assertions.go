@@ -32,9 +32,12 @@ func (builder *builder) AssertIsEqual(i1, i2 frontend.Variable) {
 	r := builder.getLinearExpression(builder.toVariable(i1))
 	o := builder.getLinearExpression(builder.toVariable(i2))
 
-	debug := builder.newDebugInfo("assertIsEqual", r, " == ", o)
+	cID := builder.cs.AddConstraint(builder.newR1C(builder.cstOne(), r, o), builder.genericGate)
 
-	builder.cs.AddConstraint(builder.newR1C(builder.cstOne(), r, o), builder.genericGate, debug)
+	if debug.Debug {
+		debug := builder.newDebugInfo("assertIsEqual", r, " == ", o)
+		builder.cs.AttachDebugInfo(debug, []int{cID})
+	}
 }
 
 // AssertIsDifferent constrain i1 and i2 to be different
@@ -71,11 +74,10 @@ func (builder *builder) AssertIsBoolean(i1 frontend.Variable) {
 
 	V := builder.getLinearExpression(v)
 
+	cID := builder.cs.AddConstraint(builder.newR1C(V, _v, o), builder.genericGate)
 	if debug.Debug {
 		debug := builder.newDebugInfo("assertIsBoolean", V, " == (0|1)")
-		builder.cs.AddConstraint(builder.newR1C(V, _v, o), builder.genericGate, debug)
-	} else {
-		builder.cs.AddConstraint(builder.newR1C(V, _v, o), builder.genericGate)
+		builder.cs.AttachDebugInfo(debug, []int{cID})
 	}
 }
 
