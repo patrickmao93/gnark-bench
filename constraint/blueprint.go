@@ -1,6 +1,10 @@
 package constraint
 
-import "github.com/consensys/gnark/constraint/solver"
+import (
+	"unsafe"
+
+	"github.com/consensys/gnark/constraint/solver"
+)
 
 type Blueprint interface {
 	NbInputs() int
@@ -147,10 +151,10 @@ func (b *BlueprintGenericR1C) NbConstraints() int {
 }
 
 func (b *BlueprintGenericR1C) CompressR1C(c *R1C) []uint32 {
-	nbInputs := 3 + 2*(len(c.L)+len(c.R)+len(c.O))
+	nbInputs := 4 + 2*(len(c.L)+len(c.R)+len(c.O))
 	r := make([]uint32, 0, nbInputs)
 	r = append(r, uint32(nbInputs))
-	r = append(r, uint32(len(c.L)), uint32(len(c.R)))
+	r = append(r, uint32(len(c.L)), uint32(len(c.R)), uint32(len(c.O)))
 	for _, t := range c.L {
 		r = append(r, uint32(t.CoeffID()), uint32(t.WireID()))
 	}
@@ -167,22 +171,32 @@ func (b *BlueprintGenericR1C) DecompressR1C(c *R1C, calldata []uint32) {
 	c.L = c.L[:0]
 	c.R = c.R[:0]
 	c.O = c.O[:0]
+	// TODO @gbotrel here we could build a virtualR1C; doesn't copy anything from the calldata
+	// each LinearExpression just points to the right place.
+	// for non-generic one it's another story. maybe.
 	// ignore j == 0 ; contains nb inputs
 	lenL := int(calldata[1])
 	lenR := int(calldata[2])
-	j := 3
-	for i := 0; i < lenL; i++ {
-		c.L = append(c.L, Term{CID: calldata[j], VID: calldata[j+1]})
-		j += 2
-	}
-	for i := 0; i < lenR; i++ {
-		c.R = append(c.R, Term{CID: calldata[j], VID: calldata[j+1]})
-		j += 2
-	}
-	for j < len(calldata) {
-		c.O = append(c.O, Term{CID: calldata[j], VID: calldata[j+1]})
-		j += 2
-	}
+	lenO := int(calldata[3])
+
+	j := 4
+	c.L = unsafe.Slice((*Term)(unsafe.Pointer(unsafe.SliceData(calldata[j:j+2*lenL]))), lenL)
+	j += 2 * lenL
+	c.R = unsafe.Slice((*Term)(unsafe.Pointer(unsafe.SliceData(calldata[j:j+2*lenR]))), lenR)
+	j += 2 * lenR
+	c.O = unsafe.Slice((*Term)(unsafe.Pointer(unsafe.SliceData(calldata[j:j+2*lenO]))), lenO)
+	// for i := 0; i < lenL; i++ {
+	// 	c.L = append(c.L, Term{CID: calldata[j], VID: calldata[j+1]})
+	// 	j += 2
+	// }
+	// for i := 0; i < lenR; i++ {
+	// 	c.R = append(c.R, Term{CID: calldata[j], VID: calldata[j+1]})
+	// 	j += 2
+	// }
+	// for j < len(calldata) {
+	// 	c.O = append(c.O, Term{CID: calldata[j], VID: calldata[j+1]})
+	// 	j += 2
+	// }
 
 }
 
