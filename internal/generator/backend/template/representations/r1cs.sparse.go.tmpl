@@ -23,7 +23,7 @@ func NewSparseR1CS(capacity int) *R1CS {
 // findUnsolvedWire computes wires associated with a hint function, if any
 // if there is no remaining wire to solve, returns -1
 // else returns the wire position (L -> 0, R -> 1, O -> 2)
-func (cs *R1CS) findUnsolvedWire(c constraint.SparseR1C, solution *solution) ( int) {
+func (cs *R1CS) findUnsolvedWire(c *constraint.SparseR1C, solution *solution) ( int) {
 	lID, rID, oID := c.L.WireID(), c.R.WireID(), c.O.WireID()
 
 	if (c.L.CoeffID() != 0 || c.M[0].CoeffID() != 0) && !solution.solved[lID] {
@@ -44,7 +44,7 @@ func (cs *R1CS) findUnsolvedWire(c constraint.SparseR1C, solution *solution) ( i
 // solveConstraint solve any unsolved wire in given constraint and update the solution
 // a SparseR1C may have up to one unsolved wire (excluding hints)
 // if it doesn't, then this function returns and does nothing
-func (cs *R1CS) solveSparseR1C(c constraint.SparseR1C, solution *solution, coefficientsNegInv fr.Vector) error {
+func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution, coefficientsNegInv fr.Vector) error {
 
 	if c.Commitment == constraint.COMMITTED { // a constraint of the form f_L - PI_2 = 0 or f_L = Comm.
 		return nil // these are there for enforcing the correctness of the commitment and can be skipped in solving time
@@ -142,7 +142,7 @@ func (cs *R1CS) GetCoefficient(i int) (r constraint.Coeff) {
 }
 
 // checkConstraint verifies that the constraint holds
-func (cs *R1CS) checkConstraint(c constraint.SparseR1C, solution *solution) error {
+func (cs *R1CS) checkConstraint(c *constraint.SparseR1C, solution *solution) error {
 
 	if c.Commitment != constraint.NOT { // a constraint of the form f_L - PI_2 = 0 or f_L = Comm.
 		return nil // these are there for enforcing the correctness of the commitment and can be skipped in solving time

@@ -180,7 +180,7 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 	return solution.values, nil
 }
 
-func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution, tmpR1C *constraint.R1C) error {
+func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution, tmpR1C *constraint.R1C, tmpSparseR1C *constraint.SparseR1C) error {
 	blueprint := cs.Blueprints[inst.BlueprintID]
 
 	if bc, ok := blueprint.(constraint.BlueprintHint); ok {
@@ -201,13 +201,12 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 	} else {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			// sparse R1CS
-			var sparseR1C constraint.SparseR1C
-			bc.DecompressSparseR1C(&sparseR1C, cs.GetCallData(inst))
+			bc.DecompressSparseR1C(tmpSparseR1C, cs.GetCallData(inst))
 
-			if err := cs.solveSparseR1C(sparseR1C, solution, cs.coefficientsNegInv); err != nil {
+			if err := cs.solveSparseR1C(tmpSparseR1C, solution, cs.coefficientsNegInv); err != nil {
 				return &UnsatisfiedConstraintError{CID: int(inst.ConstraintOffset), Err: err}
 			}
-			if err := cs.checkConstraint(sparseR1C, solution); err != nil {
+			if err := cs.checkConstraint(tmpSparseR1C, solution); err != nil {
 				return &UnsatisfiedConstraintError{CID: int(inst.ConstraintOffset), Err: err}
 			}
 			return nil
@@ -218,7 +217,7 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 
 }
 
-func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C) error) error {
+func (cs *R1CS) parallelSolve(solution *solution) error {
 	// minWorkPerCPU is the minimum target number of constraint a task should hold
 	// in other words, if a level has less than minWorkPerCPU, it will not be parallelized and executed
 	// sequentially without sync.
@@ -241,11 +240,12 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C)
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go func() {
 			var r1c constraint.R1C
+			var sparseR1C constraint.SparseR1C
 			for t := range chTasks {
 				for _, i := range t {
 					// for each constraint in the task, solve it.
 					// if err := cs.solveInstruction(cs.Instructions[i], solution, a, b, c); err != nil {
-					if err := fn(cs.Instructions[i], &r1c); err != nil {
+					if err := cs.solveInstruction(cs.Instructions[i], solution, &r1c, &sparseR1C); err != nil {
 						// var debugInfo *string
 						// if dID, ok := cs.MDebug[i]; ok {
 						// 	debugInfo = new(string)
@@ -269,6 +269,7 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C)
 
 	// for each level, we push the tasks
 	var r1c constraint.R1C
+	var sparseR1C constraint.SparseR1C
 	for _, level := range cs.Levels {
 
 		// max CPU to use
@@ -277,7 +278,7 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C)
 		if maxCPU <= 1.0 {
 			// we do it sequentially
 			for _, i := range level {
-				if err := fn(cs.Instructions[i], &r1c); err != nil {
+				if err := cs.solveInstruction(cs.Instructions[i], solution, &r1c, &sparseR1C); err != nil {
 					return err
 				}
 			}
@@ -326,13 +327,6 @@ func (cs *R1CS) parallelProcess(fn func(constraint.Instruction, *constraint.R1C)
 	}
 
 	return nil
-}
-
-func (cs *R1CS) parallelSolve(solution *solution) error {
-	solve := func(instruction constraint.Instruction, r1c *constraint.R1C) error {
-		return cs.solveInstruction(instruction, solution, r1c)
-	}
-	return cs.parallelProcess(solve)
 }
 
 // IsSolved
@@ -559,8 +553,7 @@ func (cs *R1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element, []f
 	for _, inst := range cs.Instructions {
 		blueprint := cs.Blueprints[inst.BlueprintID]
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
-			calldata := cs.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
-			bc.DecompressSparseR1C(&sparseR1C, calldata)
+			bc.DecompressSparseR1C(&sparseR1C, cs.GetCallData(inst))
 
 			l[offset+j] = solution[sparseR1C.L.WireID()]
 			r[offset+j] = solution[sparseR1C.R.WireID()]
