@@ -240,9 +240,6 @@ func (cs *R1CS) parallelSolve(solution *solution) error {
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go func() {
 			var r1c constraint.R1C
-			r1c.L = make(constraint.LinearExpression, 0, 200)
-			r1c.R = make(constraint.LinearExpression, 0, 200)
-			r1c.O = make(constraint.LinearExpression, 0, 200)
 			var sparseR1C constraint.SparseR1C
 			for t := range chTasks {
 				for _, i := range t {
@@ -272,9 +269,6 @@ func (cs *R1CS) parallelSolve(solution *solution) error {
 
 	// for each level, we push the tasks
 	var r1c constraint.R1C
-	r1c.L = make(constraint.LinearExpression, 0, 200)
-			r1c.R = make(constraint.LinearExpression, 0, 200)
-			r1c.O = make(constraint.LinearExpression, 0, 200)
 	var sparseR1C constraint.SparseR1C
 	for _, level := range cs.Levels {
 

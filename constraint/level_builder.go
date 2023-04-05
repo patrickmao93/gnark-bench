@@ -22,10 +22,6 @@ func (system *System) updateLevel(iID int, c Iterable) {
 
 	// mark output wire with level
 	for _, wireID := range system.lbOutputs {
-		// for int(wireID) >= len(system.lbWireLevel) {
-		// 	// we didn't encounter this wire yet, we need to grow b.wireLevels
-		// 	system.lbWireLevel = append(system.lbWireLevel, -1)
-		// }
 		system.lbWireLevel[wireID] = level
 	}
 
@@ -58,32 +54,4 @@ func (system *System) processWire(wireID uint32, maxLevel *int) {
 	}
 	// this wire is an output to the instruction
 	system.lbOutputs = append(system.lbOutputs, wireID)
-
-	// // we don't know how to solve this wire; it's either THE wire we have to solve or a hint.
-	// if hID, ok := system.MHints[int(wireID)]; ok {
-	// 	// check that we didn't process that hint already; performance wise, if many wires in a
-	// 	// constraint are the output of the same hint, and input to parent hint are themselves
-	// 	// computed with a hint, we can suffer.
-	// 	// (nominal case: not too many different hints involved for a single constraint)
-	// 	if _, ok := system.lbHints[hID]; ok {
-	// 		// skip
-	// 		return
-	// 	}
-	// 	system.lbHints[hID] = struct{}{}
-	// 	h := &system.HintMappings[hID]
-
-	// 	for _, hwid := range h.Outputs {
-	// 		system.lbOutputs = append(system.lbOutputs, uint32(hwid))
-	// 	}
-	// 	for _, in := range h.Inputs {
-	// 		for _, t := range in {
-	// 			if !t.IsConstant() {
-	// 				system.processWire(t.VID, maxLevel)
-	// 			}
-	// 		}
-	// 	}
-
-	// 	return
-	// }
-
 }

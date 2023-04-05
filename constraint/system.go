@@ -112,8 +112,6 @@ type System struct {
 	// several constraints may point to the same debug info
 	MDebug map[int]int
 
-	HintMappings       []HintMapping
-	MHints             map[int]int              // maps wireID to hint
 	MHintsDependencies map[solver.HintID]string // maps hintID to hint string identifier
 
 	// each level contains independent constraints and can be parallelized
@@ -135,8 +133,8 @@ type System struct {
 
 	CommitmentInfo Commitment
 
-	Blueprints    []Blueprint
 	Instructions  []Instruction
+	Blueprints    []Blueprint
 	CallData      []uint32 // huge slice.
 	NbConstraints int      // can be != than len(instructions
 
@@ -150,7 +148,6 @@ func NewSystem(scalarField *big.Int, capacity int) System {
 		MDebug:             map[int]int{},
 		GnarkVersion:       gnark.Version.String(),
 		ScalarField:        scalarField.Text(16),
-		MHints:             make(map[int]int),
 		MHintsDependencies: make(map[solver.HintID]string),
 		q:                  new(big.Int).Set(scalarField),
 		bitLen:             scalarField.BitLen(),
