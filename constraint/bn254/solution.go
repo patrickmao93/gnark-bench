@@ -19,6 +19,7 @@ package cs
 import (
 	"errors"
 	"fmt"
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/debug"
@@ -42,7 +43,12 @@ type solution struct {
 	mHintsFunctions      map[solver.HintID]solver.Hint // maps hintID to hint function
 	st                   *debug.SymbolTable
 	cs                   *constraint.System
+
+	a, b, c            fr.Vector
+	coefficientsNegInv fr.Vector
 }
+
+// Implement constraint.Solver
 
 func (s *solution) GetValue(cID, vID uint32) constraint.Element {
 	var r constraint.Element
@@ -59,52 +65,6 @@ func (s *solution) SetValue(vID uint32, f constraint.Element) {
 	s.set(int(vID), fr.Element(f[:]))
 }
 
-// type felt struct {
-// 	fr.Element
-// }
-
-// func anyToElement(other any) fr.Element {
-// 	if f, ok := other.(*felt); ok {
-// 		return f.Element
-// 	}
-// 	var o fr.Element
-// 	if _, err := o.SetInterface(other); err != nil {
-// 		panic(err)
-// 	}
-// 	return o
-// }
-
-// func (f *felt) Mul(other any) {
-// 	o := anyToElement(other)
-// 	f.Element.Mul(&f.Element, &o)
-// }
-// func (f *felt) Div(other any) {
-// 	o := anyToElement(other)
-// 	f.Element.Div(&f.Element, &o)
-// }
-// func (f *felt) Add(other any) {
-// 	o := anyToElement(other)
-// 	f.Element.Add(&f.Element, &o)
-// }
-// func (f *felt) Sub(other any) {
-// 	o := anyToElement(other)
-// 	f.Element.Sub(&f.Element, &o)
-// }
-
-// type Solver interface {
-// 	GetValue(cID, vID uint32) Felt
-// 	GetCoeff(cID uint32) Felt
-// 	SetValue(vID uint32, f Felt)
-// 	TmpFelt() Felt
-// }
-
-// type Felt interface {
-// 	Mul(other any)
-// 	Div(other any)
-// 	Add(other any)
-// 	Sub(other any)
-// }
-
 func (s *solution) GetWireValue(i int) constraint.Element {
 	var c constraint.Element
 	copy(c[:], s.values[i][:])
@@ -117,7 +77,7 @@ func (s *solution) SetWireValue(i int, c constraint.Element) {
 	s.set(i, e)
 }
 
-func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element) (solution, error) {
+func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element, isR1CS bool) (solution, error) {
 
 	s := solution{
 		cs:              cs,
@@ -138,6 +98,19 @@ func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.Hi
 
 	if len(missing) > 0 {
 		return s, fmt.Errorf("solver missing hint(s): %v", missing)
+	}
+
+	if isR1CS {
+		n := ecc.NextPowerOfTwo(uint64(cs.GetNbConstraints()))
+		s.a = make(fr.Vector, cs.GetNbConstraints(), n)
+		s.b = make(fr.Vector, cs.GetNbConstraints(), n)
+		s.c = make(fr.Vector, cs.GetNbConstraints(), n)
+	} else {
+		// TODO @gbotrel this could be done once in the CS, most of the time.
+		s.coefficientsNegInv = fr.Vector(fr.BatchInvert(coefficients))
+		for i := 0; i < len(s.coefficientsNegInv); i++ {
+			s.coefficientsNegInv[i].Neg(&s.coefficientsNegInv[i])
+		}
 	}
 
 	return s, nil

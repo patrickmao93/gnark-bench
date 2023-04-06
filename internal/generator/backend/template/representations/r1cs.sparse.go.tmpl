@@ -44,7 +44,7 @@ func (cs *R1CS) findUnsolvedWire(c *constraint.SparseR1C, solution *solution) ( 
 // solveConstraint solve any unsolved wire in given constraint and update the solution
 // a SparseR1C may have up to one unsolved wire (excluding hints)
 // if it doesn't, then this function returns and does nothing
-func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution, coefficientsNegInv fr.Vector) error {
+func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution) error {
 
 	if c.Commitment == constraint.COMMITTED { // a constraint of the form f_L - PI_2 = 0 or f_L = Comm.
 		return nil // these are there for enforcing the correctness of the commitment and can be skipped in solving time
@@ -108,7 +108,7 @@ func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution, coef
 
 	// o = - ((m0 * m1) + l + r + c.QC) / c.O
 	o.Mul(&m0, &m1).Add(&o, &l).Add(&o, &r).Add(&o, &cs.Coefficients[c.QC])
-	o.Mul(&o, &coefficientsNegInv[cID])
+	o.Mul(&o, &solution.coefficientsNegInv[cID])
 
 	
 	solution.set(int(vID), o)

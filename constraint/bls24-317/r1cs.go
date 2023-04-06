@@ -43,10 +43,7 @@ type R1CS struct {
 	CoeffTable
 	arithEngine
 
-	// ...
-	isR1CS             bool
-	a, b, c            fr.Vector
-	coefficientsNegInv fr.Vector
+	isR1CS bool
 }
 
 // NewR1CS returns a new R1CS and sets cs.Coefficient (fr.Element) from provided big.Int values
@@ -61,33 +58,13 @@ func NewR1CS(capacity int) *R1CS {
 	return &r
 }
 
-// Solve returns the vector w solution to the system, that is
-// Aw o Bw - Cw = 0
+// Solve solves the constraint system with provided witness.
+// If it's a R1CS returns R1CSSolution
+// If it's a SparseR1CS returns SparseR1CSSolution
 func (cs *R1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, error) {
 	opt, err := solver.NewConfig(opts...)
 	if err != nil {
 		return nil, err
-	}
-
-	if cs.isR1CS {
-		s := ecc.NextPowerOfTwo(uint64(cs.GetNbConstraints()))
-		cs.a = make(fr.Vector, cs.GetNbConstraints(), s)
-		cs.b = make(fr.Vector, cs.GetNbConstraints(), s)
-		cs.c = make(fr.Vector, cs.GetNbConstraints(), s)
-		defer func() {
-			cs.a = nil
-			cs.b = nil
-			cs.c = nil
-		}()
-	} else {
-		// batch invert the coefficients to avoid many divisions in the solver
-		cs.coefficientsNegInv = fr.Vector(fr.BatchInvert(cs.Coefficients))
-		for i := 0; i < len(cs.coefficientsNegInv); i++ {
-			cs.coefficientsNegInv[i].Neg(&cs.coefficientsNegInv[i])
-		}
-		defer func() {
-			cs.coefficientsNegInv = nil
-		}()
 	}
 
 	v := witness.Vector().(fr.Vector)
@@ -99,19 +76,20 @@ func (cs *R1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, erro
 
 	if cs.isR1CS {
 		var res R1CSSolution
-		res.W = solution
-		res.A = cs.a
-		res.B = cs.b
-		res.C = cs.c
+		res.W = solution.values
+		res.A = solution.a
+		res.B = solution.b
+		res.C = solution.c
+		return &res, nil
+	} else {
+		// sparse R1CS
+		var res SparseR1CSSolution
+		// query l, r, o in Lagrange basis, not blinded
+		res.L, res.R, res.O = cs.evaluateLROSmallDomain(solution.values)
+
 		return &res, nil
 	}
 
-	// sparse R1CS
-	var res SparseR1CSSolution
-	// query l, r, o in Lagrange basis, not blinded
-	res.L, res.R, res.O = cs.evaluateLROSmallDomain(solution)
-
-	return &res, nil
 }
 
 // Solve sets all the wires and returns the a, b, c vectors.
@@ -119,7 +97,7 @@ func (cs *R1CS) Solve(witness witness.Witness, opts ...solver.Option) (any, erro
 // a, b, c vectors: ab-c = hz
 // witness = [publicWires | secretWires] (without the ONE_WIRE !)
 // returns  [publicWires | secretWires | internalWires ]
-func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
+func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (solution, error) {
 	log := logger.Logger().With().Int("nbConstraints", cs.GetNbConstraints()).Logger()
 
 	witnessOffset := 0
@@ -128,9 +106,9 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 	}
 
 	nbWires := len(cs.Public) + len(cs.Secret) + cs.NbInternalVariables
-	solution, err := newSolution(&cs.System, nbWires, opt.HintFunctions, cs.Coefficients)
+	solution, err := newSolution(&cs.System, nbWires, opt.HintFunctions, cs.Coefficients, cs.isR1CS)
 	if err != nil {
-		return make(fr.Vector, nbWires), err
+		return solution, err
 	}
 	start := time.Now()
 
@@ -139,7 +117,7 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 	if len(witness) != expectedWitnessSize {
 		err = fmt.Errorf("invalid witness size, got %d, expected %d", len(witness), expectedWitnessSize)
 		log.Err(err).Send()
-		return solution.values, err
+		return solution, err
 	}
 
 	if witnessOffset == 1 {
@@ -166,7 +144,7 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 		} else {
 			log.Err(err).Send()
 		}
-		return solution.values, err
+		return solution, err
 	}
 
 	// sanity check; ensure all wires are marked as "instantiated"
@@ -177,7 +155,7 @@ func (cs *R1CS) solve(witness fr.Vector, opt solver.Config) (fr.Vector, error) {
 
 	log.Debug().Dur("took", time.Since(start)).Msg("constraint system solver done")
 
-	return solution.values, nil
+	return solution, nil
 }
 
 func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution, tmpR1C *constraint.R1C, tmpSparseR1C *constraint.SparseR1C) error {
@@ -198,7 +176,7 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 			// TODO @gbotrel use pool object here for the R1C
 			bc.DecompressR1C(tmpR1C, cs.GetCallData(inst))
 			cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
-			return cs.solveConstraint(cID, tmpR1C, solution, &cs.a[cID], &cs.b[cID], &cs.c[cID])
+			return cs.solveConstraint(cID, tmpR1C, solution)
 		} else {
 			// panic("not implemented")
 		}
@@ -207,7 +185,7 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 			// sparse R1CS
 			bc.DecompressSparseR1C(tmpSparseR1C, cs.GetCallData(inst))
 
-			if err := cs.solveSparseR1C(tmpSparseR1C, solution, cs.coefficientsNegInv); err != nil {
+			if err := cs.solveSparseR1C(tmpSparseR1C, solution); err != nil {
 				return &UnsatisfiedConstraintError{CID: int(inst.ConstraintOffset), Err: err}
 			}
 			if err := cs.checkConstraint(tmpSparseR1C, solution); err != nil {
@@ -377,7 +355,8 @@ func (cs *R1CS) wrapErrWithDebugInfo(solution *solution, cID uint32, err error) 
 // returns false, nil if there was no wire to solve
 // returns true, nil if exactly one wire was solved. In that case, it is redundant to check that
 // the constraint is satisfied later.
-func (cs *R1CS) solveConstraint(cID uint32, r *constraint.R1C, solution *solution, a, b, c *fr.Element) error {
+func (cs *R1CS) solveConstraint(cID uint32, r *constraint.R1C, solution *solution) error {
+	a, b, c := &solution.a[cID], &solution.b[cID], &solution.c[cID]
 
 	// the index of the non-zero entry shows if L, R or O has an uninstantiated wire
 	// the content is the ID of the wire non instantiated
