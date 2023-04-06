@@ -150,7 +150,7 @@ func (builder *builder) addMulGate(a, b, c expr.Term) {
 		XC: uint32(c.VID),
 		QM: QM,
 		QO: QO,
-	}, builder.genericGate)
+	}, builder.mulGate)
 }
 
 func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {

@@ -74,5 +74,6 @@ func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uin
 	c.XA = calldata[0]
 	c.XB = calldata[1]
 	c.XC = calldata[2]
+	c.QO = CoeffIdMinusOne
 	c.QM = calldata[3]
 }
