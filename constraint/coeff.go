@@ -19,6 +19,7 @@ type CoeffEngine interface {
 	FromInterface(interface{}) Coeff
 	ToBigInt(*Coeff) *big.Int
 	Mul(a, b *Coeff)
+	Mul2(a, b Coeff) Coeff
 	Add(a, b *Coeff)
 	Sub(a, b *Coeff)
 	Neg(a *Coeff)

@@ -11,6 +11,10 @@ type Blueprint interface {
 	NbConstraints() int
 }
 
+type BlueprintSolvable interface {
+	Solve(s Solver, calldata []uint32)
+}
+
 type BlueprintR1C interface {
 	CompressR1C(c *R1C) []uint32
 	DecompressR1C(into *R1C, calldata []uint32)
@@ -190,7 +194,7 @@ type BlueprintSparseR1CMul struct {
 }
 
 func (b *BlueprintSparseR1CMul) NbInputs() int {
-	return 5
+	return 4
 }
 func (b *BlueprintSparseR1CMul) NbConstraints() int {
 	return 1
@@ -200,11 +204,28 @@ func (b *BlueprintSparseR1CMul) CompressSparseR1C(c *SparseR1C) []uint32 {
 	return []uint32{
 		c.M[0].CID,
 		c.M[0].VID,
-		// c.M[1].CID,
 		c.M[1].VID,
-		c.O.CID,
 		c.O.VID,
 	}
+}
+
+type Solver interface {
+	CoeffEngine
+	GetValue(cID, vID uint32) Coeff
+	GetCoeff(cID uint32) Coeff
+	SetValue(vID uint32, f Coeff)
+}
+
+func (b *BlueprintSparseR1CMul) Solve(s Solver, calldata []uint32) {
+	m0 := s.GetValue(calldata[0], calldata[1])
+	m1 := s.GetValue(CoeffIdOne, calldata[2])
+	// qO := s.GetCoeff(calldata[3])
+
+	m0 = s.Mul2(m0, m1)
+	// m0.Div(qO)
+
+	s.SetValue(calldata[3], m0)
+
 }
 
 func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
@@ -214,8 +235,8 @@ func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uin
 	c.M[0].VID = calldata[1]
 	c.M[1].CID = CoeffIdOne
 	c.M[1].VID = calldata[2]
-	c.O.CID = calldata[3]
-	c.O.VID = calldata[4]
+	c.O.CID = CoeffIdMinusOne
+	c.O.VID = calldata[3]
 
 	c.L.VID = c.M[0].VID
 	c.R.VID = c.M[1].VID

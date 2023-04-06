@@ -189,6 +189,10 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 		return solution.solveWithHint(hm)
 	}
 
+	if bc, ok := blueprint.(constraint.BlueprintSolvable); ok {
+		bc.Solve(solution, cs.GetCallData(inst))
+	}
+
 	if cs.isR1CS {
 		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
 			// TODO @gbotrel use pool object here for the R1C
@@ -196,7 +200,7 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 			cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
 			return cs.solveConstraint(cID, tmpR1C, solution, &cs.a[cID], &cs.b[cID], &cs.c[cID])
 		} else {
-			panic("not implemented")
+			// panic("not implemented")
 		}
 	} else {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
@@ -211,10 +215,11 @@ func (cs *R1CS) solveInstruction(inst constraint.Instruction, solution *solution
 			}
 			return nil
 		} else {
-			panic("not implemented")
+			// panic("not implemented")
 		}
 	}
 
+	return nil
 }
 
 func (cs *R1CS) parallelSolve(solution *solution) error {

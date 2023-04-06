@@ -122,6 +122,14 @@ func (engine *arithEngine) Mul(a, b *constraint.Coeff) {
 	_b := (*fr.Element)(b[:])
 	_a.Mul(_a, _b)
 }
+
+func (engine *arithEngine) Mul2(a, b constraint.Coeff) constraint.Coeff {
+	_a := (*fr.Element)(a[:])
+	_b := (*fr.Element)(b[:])
+	_a.Mul(_a, _b)
+	return a
+}
+
 func (engine *arithEngine) Add(a, b *constraint.Coeff) {
 	_a := (*fr.Element)(a[:])
 	_b := (*fr.Element)(b[:])

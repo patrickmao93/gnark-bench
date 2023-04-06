@@ -18,11 +18,12 @@ package scs
 
 import (
 	"fmt"
-	"github.com/consensys/gnark/frontend/cs"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
+
+	"github.com/consensys/gnark/frontend/cs"
 
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
@@ -127,7 +128,7 @@ func (builder *builder) DivUnchecked(i1, i2 frontend.Variable) frontend.Variable
 
 	// res * i2 == i1
 	res := builder.newInternalVariable()
-	builder.addMulGate(res, i2.(expr.Term), i1.(expr.Term))
+	builder.addMulGateGeneric(res, i2.(expr.Term), i1.(expr.Term))
 	return res
 }
 

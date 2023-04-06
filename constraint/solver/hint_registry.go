@@ -9,6 +9,7 @@ import (
 
 func init() {
 	RegisterHint(InvZeroHint)
+	RegisterHint(MulGateSolverHint)
 }
 
 var (
@@ -56,5 +57,22 @@ func InvZeroHint(q *big.Int, inputs []*big.Int, results []*big.Int) error {
 	}
 
 	result.ModInverse(result, q)
+	return nil
+}
+
+func MulGateSolverHint(q *big.Int, inputs []*big.Int, results []*big.Int) error {
+	result := results[0]
+
+	result.Mul(inputs[0], inputs[1]) //.Div(result, inputs[2])
+
+	// // save input
+	// result.Set(inputs[0])
+
+	// // a == 0, return
+	// if result.IsUint64() && result.Uint64() == 0 {
+	// 	return nil
+	// }
+
+	// result.ModInverse(result, q)
 	return nil
 }

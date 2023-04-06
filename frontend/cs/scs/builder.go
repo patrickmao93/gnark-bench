@@ -154,6 +154,27 @@ func (builder *builder) addMulGate(a, b, c expr.Term) {
 	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.mulGate)
 }
 
+func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {
+	qO := builder.tMinusOne
+	if c.Coeff != builder.tOne {
+		// slow path
+		t := c.Coeff
+		builder.cs.Neg(&t)
+		qO = t
+	}
+	qM := a.Coeff
+	builder.cs.Mul(&qM, &b.Coeff)
+
+	m1 := builder.cs.MakeTerm(&qM, a.VID)
+	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
+	o := builder.cs.MakeTerm(&qO, c.VID)
+	l := builder.cs.MakeTerm(&constraint.Coeff{}, a.VID)
+	r := builder.cs.MakeTerm(&constraint.Coeff{}, b.VID)
+
+	// we put l and r here because... wire id is used in level builder :s
+	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.genericGate)
+}
+
 // addPlonkConstraint adds a sparseR1C to the underlying constraint system
 func (builder *builder) addPlonkConstraint(c sparseR1C, debugInfo ...constraint.DebugInfo) {
 	if !c.qM.IsZero() && (c.xa == 0 || c.xb == 0) {
