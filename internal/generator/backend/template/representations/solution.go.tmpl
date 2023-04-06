@@ -25,18 +25,18 @@ type solution struct {
 	cs *constraint.System
 }
 
-func (s *solution) GetValue(cID, vID uint32) constraint.Coeff {
-	var r constraint.Coeff
+func (s *solution) GetValue(cID, vID uint32) constraint.Element {
+	var r constraint.Element
 	e := s.computeTerm(constraint.Term{CID:cID,VID: vID})	
 	copy(r[:], e[:])
 	return r
 }
-func (s *solution) GetCoeff(cID uint32) constraint.Coeff {
-	var r constraint.Coeff
+func (s *solution) GetCoeff(cID uint32) constraint.Element {
+	var r constraint.Element
 	copy(r[:], s.coefficients[cID][:])
 	return r
 }
-func (s *solution) SetValue(vID uint32, f constraint.Coeff) {
+func (s *solution) SetValue(vID uint32, f constraint.Element) {
 	s.set(int(vID), fr.Element(f[:]))
 }
 
@@ -89,13 +89,13 @@ func (s *solution) SetValue(vID uint32, f constraint.Coeff) {
 
 
 
-func (s *solution) GetWireValue(i int) constraint.Coeff {
-	var c constraint.Coeff
+func (s *solution) GetWireValue(i int) constraint.Element {
+	var c constraint.Element
 	copy(c[:], s.values[i][:])
 	return c 
 }
 
-func (s *solution) SetWireValue(i int, c constraint.Coeff) {
+func (s *solution) SetWireValue(i int, c constraint.Element) {
 	var e fr.Element 
 	copy(e[:], c[:])
 	s.set(i, e)

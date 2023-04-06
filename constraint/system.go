@@ -16,11 +16,20 @@ import (
 	"github.com/consensys/gnark/logger"
 )
 
+// ids of the coefficients with simple values in any cs.coeffs slice.
+const (
+	CoeffIdZero     = 0
+	CoeffIdOne      = 1
+	CoeffIdTwo      = 2
+	CoeffIdMinusOne = 3
+	CoeffIdMinusTwo = 4
+)
+
 // ConstraintSystem interface that all constraint systems implement.
 type ConstraintSystem interface {
 	io.WriterTo
 	io.ReaderFrom
-	CoeffEngine
+	Field
 
 	// IsSolved returns nil if given witness solves the constraint system and error otherwise
 	// Deprecated: use _, err := Solve(...) instead
@@ -59,7 +68,7 @@ type ConstraintSystem interface {
 
 	// MakeTerm returns a new Term. The constraint system may store coefficients in a map, so
 	// calls to this function will grow the memory usage of the constraint system.
-	MakeTerm(coeff *Coeff, variableID int) Term
+	MakeTerm(coeff *Element, variableID int) Term
 
 	NewDebugInfo(errName string, i ...interface{}) DebugInfo
 

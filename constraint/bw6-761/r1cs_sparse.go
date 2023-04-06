@@ -148,7 +148,7 @@ func (cs *R1CS) GetConstraints2() ([]constraint.SparseR1C, constraint.Resolver) 
 	return toReturn, cs
 }
 
-func (cs *R1CS) GetCoefficient(i int) (r constraint.Coeff) {
+func (cs *R1CS) GetCoefficient(i int) (r constraint.Element) {
 	copy(r[:], cs.Coefficients[i][:])
 	return
 }

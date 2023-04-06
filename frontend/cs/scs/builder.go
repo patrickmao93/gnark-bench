@@ -65,7 +65,7 @@ type builder struct {
 	mAddConstraints map[uint64]int
 
 	// frequently used coefficients
-	tOne, tMinusOne constraint.Coeff
+	tOne, tMinusOne constraint.Element
 
 	genericGate constraint.BlueprintID
 	mulGate     constraint.BlueprintID
@@ -127,8 +127,8 @@ func (builder *builder) FieldBitLen() int {
 // TODO @gbotrel doing a 2-step refactoring for now, frontend only. need to update constraint/SparseR1C.
 // qL⋅xa + qR⋅xb + qO⋅xc + qM⋅(xaxb) + qC == 0
 type sparseR1C struct {
-	xa, xb, xc         int              // wires
-	qL, qR, qO, qM, qC constraint.Coeff // coefficients
+	xa, xb, xc         int                // wires
+	qL, qR, qO, qM, qC constraint.Element // coefficients
 	commitment         constraint.CommitmentConstraint
 }
 
@@ -137,18 +137,15 @@ func (builder *builder) addMulGate(a, b, c expr.Term) {
 	qO := builder.tMinusOne
 	if c.Coeff != builder.tOne {
 		// slow path
-		t := c.Coeff
-		builder.cs.Neg(&t)
-		qO = t
+		qO = builder.cs.Neg(c.Coeff)
 	}
-	qM := a.Coeff
-	builder.cs.Mul(&qM, &b.Coeff)
+	qM := builder.cs.Mul(a.Coeff, b.Coeff)
 
 	m1 := builder.cs.MakeTerm(&qM, a.VID)
 	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
 	o := builder.cs.MakeTerm(&qO, c.VID)
-	l := builder.cs.MakeTerm(&constraint.Coeff{}, a.VID)
-	r := builder.cs.MakeTerm(&constraint.Coeff{}, b.VID)
+	l := builder.cs.MakeTerm(&constraint.Element{}, a.VID)
+	r := builder.cs.MakeTerm(&constraint.Element{}, b.VID)
 
 	// we put l and r here because... wire id is used in level builder :s
 	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.mulGate)
@@ -159,17 +156,16 @@ func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {
 	if c.Coeff != builder.tOne {
 		// slow path
 		t := c.Coeff
-		builder.cs.Neg(&t)
-		qO = t
+		qO = builder.cs.Neg(t)
 	}
 	qM := a.Coeff
-	builder.cs.Mul(&qM, &b.Coeff)
+	qM = builder.cs.Mul(qM, b.Coeff)
 
 	m1 := builder.cs.MakeTerm(&qM, a.VID)
 	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
 	o := builder.cs.MakeTerm(&qO, c.VID)
-	l := builder.cs.MakeTerm(&constraint.Coeff{}, a.VID)
-	r := builder.cs.MakeTerm(&constraint.Coeff{}, b.VID)
+	l := builder.cs.MakeTerm(&constraint.Element{}, a.VID)
+	r := builder.cs.MakeTerm(&constraint.Element{}, b.VID)
 
 	// we put l and r here because... wire id is used in level builder :s
 	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.genericGate)
@@ -228,7 +224,7 @@ func (builder *builder) reduce(l expr.LinearExpression) expr.LinearExpression {
 	for i := 1; i < len(l); i++ {
 		if l[i-1].VID == l[i].VID {
 			// we have redundancy
-			builder.cs.Add(&l[i-1].Coeff, &l[i].Coeff)
+			l[i-1].Coeff = builder.cs.Add(l[i-1].Coeff, l[i].Coeff)
 			l = append(l[:i], l[i+1:]...)
 			i--
 		}
@@ -241,7 +237,7 @@ func (builder *builder) reduce(l expr.LinearExpression) expr.LinearExpression {
 // This returns true if the v is a constant and v == 0 || v == 1.
 func (builder *builder) IsBoolean(v frontend.Variable) bool {
 	if b, ok := builder.constantValue(v); ok {
-		return (b.IsZero() || builder.cs.IsOne(&b))
+		return (b.IsZero() || builder.cs.IsOne(b))
 	}
 	_, ok := builder.mtBooleans[v.(expr.Term)]
 	return ok
@@ -291,12 +287,12 @@ func (builder *builder) ConstantValue(v frontend.Variable) (*big.Int, bool) {
 	if !ok {
 		return nil, false
 	}
-	return builder.cs.ToBigInt(&coeff), true
+	return builder.cs.ToBigInt(coeff), true
 }
 
-func (builder *builder) constantValue(v frontend.Variable) (constraint.Coeff, bool) {
+func (builder *builder) constantValue(v frontend.Variable) (constraint.Element, bool) {
 	if _, ok := v.(expr.Term); ok {
-		return constraint.Coeff{}, false
+		return constraint.Element{}, false
 	}
 	return builder.cs.FromInterface(v), true
 }
@@ -344,12 +340,12 @@ func (builder *builder) NewHint(f solver.Hint, nbOutputs int, inputs ...frontend
 }
 
 // returns in split into a slice of compiledTerm and the sum of all constants in in as a bigInt
-func (builder *builder) filterConstantSum(in []frontend.Variable) (expr.LinearExpression, constraint.Coeff) {
+func (builder *builder) filterConstantSum(in []frontend.Variable) (expr.LinearExpression, constraint.Element) {
 	res := make(expr.LinearExpression, 0, len(in))
-	b := constraint.Coeff{}
+	b := constraint.Element{}
 	for i := 0; i < len(in); i++ {
 		if c, ok := builder.constantValue(in[i]); ok {
-			builder.cs.Add(&b, &c)
+			b = builder.cs.Add(b, c)
 		} else {
 			res = append(res, in[i].(expr.Term))
 		}
@@ -358,12 +354,12 @@ func (builder *builder) filterConstantSum(in []frontend.Variable) (expr.LinearEx
 }
 
 // returns in split into a slice of compiledTerm and the product of all constants in in as a coeff
-func (builder *builder) filterConstantProd(in []frontend.Variable) (expr.LinearExpression, constraint.Coeff) {
+func (builder *builder) filterConstantProd(in []frontend.Variable) (expr.LinearExpression, constraint.Element) {
 	res := make(expr.LinearExpression, 0, len(in))
 	b := builder.tOne
 	for i := 0; i < len(in); i++ {
 		if c, ok := builder.constantValue(in[i]); ok {
-			builder.cs.Mul(&b, &c)
+			b = builder.cs.Mul(b, c)
 		} else {
 			res = append(res, in[i].(expr.Term))
 		}
@@ -371,7 +367,7 @@ func (builder *builder) filterConstantProd(in []frontend.Variable) (expr.LinearE
 	return res, b
 }
 
-func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *constraint.Coeff) expr.Term {
+func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *constraint.Element) expr.Term {
 	// floor case
 	if len(r) == 0 {
 		if k != nil {
@@ -394,7 +390,7 @@ func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *cons
 	}
 
 	// constraint to add: acc + r[0] (+ k) == o
-	qC := constraint.Coeff{}
+	qC := constraint.Element{}
 	if k != nil {
 		qC = *k
 	}
@@ -629,10 +625,10 @@ func (builder *builder) newDebugInfo(errName string, in ...interface{}) constrai
 			in[i] = builder.cs.MakeTerm(&t.Coeff, t.VID)
 		case *expr.Term:
 			in[i] = builder.cs.MakeTerm(&t.Coeff, t.VID)
-		case constraint.Coeff:
-			in[i] = builder.cs.String(&t)
-		case *constraint.Coeff:
+		case constraint.Element:
 			in[i] = builder.cs.String(t)
+		case *constraint.Element:
+			in[i] = builder.cs.String(*t)
 		}
 	}
 

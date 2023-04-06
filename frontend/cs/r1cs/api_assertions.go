@@ -56,7 +56,7 @@ func (builder *builder) AssertIsBoolean(i1 frontend.Variable) {
 	v := builder.toVariable(i1)
 
 	if b, ok := builder.constantValue(v); ok {
-		if !(builder.isCstZero(&b) || builder.isCstOne(&b)) {
+		if !(b.IsZero() || builder.isCstOne(b)) {
 			panic("assertIsBoolean failed: constant is not 0 or 1") // TODO @gbotrel print
 		}
 		return
@@ -93,7 +93,7 @@ func (builder *builder) AssertIsLessOrEqual(v frontend.Variable, bound frontend.
 
 	// both inputs are constants
 	if vConst && bConst {
-		bv, bb := builder.cs.ToBigInt(&cv), builder.cs.ToBigInt(&cb)
+		bv, bb := builder.cs.ToBigInt(cv), builder.cs.ToBigInt(cb)
 		if bv.Cmp(bb) == 1 {
 			panic(fmt.Sprintf("AssertIsLessOrEqual: %s > %s", bv.String(), bb.String()))
 		}
@@ -102,7 +102,7 @@ func (builder *builder) AssertIsLessOrEqual(v frontend.Variable, bound frontend.
 	// bound is constant
 	if bConst {
 		vv := builder.toVariable(v)
-		builder.mustBeLessOrEqCst(vv, builder.cs.ToBigInt(&cb))
+		builder.mustBeLessOrEqCst(vv, builder.cs.ToBigInt(cb))
 		return
 	}
 

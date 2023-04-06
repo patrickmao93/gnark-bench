@@ -64,7 +64,7 @@ func (builder *builder) MulAcc(a, b, c frontend.Variable) frontend.Variable {
 
 		// v1 and v2 are constants, we multiply big.Int values and return resulting constant
 		if v1Constant && v2Constant {
-			builder.cs.Mul(&n1, &n2)
+			n1 = builder.cs.Mul(n1, n2)
 			builder.mbuf1 = append(builder.mbuf1, expr.NewTerm(0, n1))
 			return
 		}
@@ -145,9 +145,9 @@ func (builder *builder) add(vars []expr.LinearExpression, sub bool, capacity int
 		if curr != -1 && t.VID == (*res)[curr].VID {
 			// accumulate, it's the same variable ID
 			if sub && lID != 0 {
-				builder.cs.Sub(&(*res)[curr].Coeff, &t.Coeff)
+				(*res)[curr].Coeff = builder.cs.Sub((*res)[curr].Coeff, t.Coeff)
 			} else {
-				builder.cs.Add(&(*res)[curr].Coeff, &t.Coeff)
+				(*res)[curr].Coeff = builder.cs.Add((*res)[curr].Coeff, t.Coeff)
 			}
 			if (*res)[curr].Coeff.IsZero() {
 				// remove self.
@@ -159,14 +159,14 @@ func (builder *builder) add(vars []expr.LinearExpression, sub bool, capacity int
 			(*res) = append((*res), *t)
 			curr++
 			if sub && lID != 0 {
-				builder.cs.Neg(&(*res)[curr].Coeff)
+				(*res)[curr].Coeff = builder.cs.Neg((*res)[curr].Coeff)
 			}
 		}
 	}
 
 	if len((*res)) == 0 {
 		// keep the linear expression valid (assertIsSet)
-		(*res) = append((*res), expr.NewTerm(0, constraint.Coeff{}))
+		(*res) = append((*res), expr.NewTerm(0, constraint.Element{}))
 	}
 	// if the linear expression LE is too long then record an equality
 	// constraint LE * 1 = t and return short linear expression instead.
@@ -185,7 +185,7 @@ func (builder *builder) Neg(i frontend.Variable) frontend.Variable {
 	v := builder.toVariable(i)
 
 	if n, ok := builder.constantValue(v); ok {
-		builder.cs.Neg(&n)
+		n = builder.cs.Neg(n)
 		return expr.NewLinearExpression(0, n)
 	}
 
@@ -210,7 +210,7 @@ func (builder *builder) Mul(i1, i2 frontend.Variable, in ...frontend.Variable) f
 
 		// v1 and v2 are constants, we multiply big.Int values and return resulting constant
 		if v1Constant && v2Constant {
-			builder.cs.Mul(&n1, &n2)
+			n1 = builder.cs.Mul(n1, n2)
 			return expr.NewLinearExpression(0, n1)
 		}
 
@@ -229,7 +229,7 @@ func (builder *builder) Mul(i1, i2 frontend.Variable, in ...frontend.Variable) f
 	return res
 }
 
-func (builder *builder) mulConstant(v1 expr.LinearExpression, lambda constraint.Coeff, inPlace bool) expr.LinearExpression {
+func (builder *builder) mulConstant(v1 expr.LinearExpression, lambda constraint.Element, inPlace bool) expr.LinearExpression {
 	// multiplying a frontend.Variable by a constant -> we updated the coefficients in the linear expression
 	// leading to that frontend.Variable
 	var res expr.LinearExpression
@@ -240,7 +240,7 @@ func (builder *builder) mulConstant(v1 expr.LinearExpression, lambda constraint.
 	}
 
 	for i := 0; i < len(res); i++ {
-		builder.cs.Mul(&res[i].Coeff, &lambda)
+		res[i].Coeff = builder.cs.Mul(res[i].Coeff, lambda)
 	}
 	return res
 }
@@ -270,11 +270,11 @@ func (builder *builder) DivUnchecked(i1, i2 frontend.Variable) frontend.Variable
 		panic("div by constant(0)")
 	}
 	// q := builder.q
-	builder.cs.Inverse(&n2)
+	n2 = builder.cs.Inverse(n2)
 	// n2.ModInverse(n2, q)
 
 	if v1Constant {
-		builder.cs.Mul(&n2, &n1)
+		n2 = builder.cs.Mul(n2, n1)
 		return expr.NewLinearExpression(0, n2)
 	}
 
@@ -307,10 +307,10 @@ func (builder *builder) Div(i1, i2 frontend.Variable) frontend.Variable {
 	if n2.IsZero() {
 		panic("div by constant(0)")
 	}
-	builder.cs.Inverse(&n2)
+	n2 = builder.cs.Inverse(n2)
 
 	if v1Constant {
-		builder.cs.Mul(&n2, &n1)
+		n2 = builder.cs.Mul(n2, n1)
 		return expr.NewLinearExpression(0, n2)
 	}
 
@@ -327,7 +327,7 @@ func (builder *builder) Inverse(i1 frontend.Variable) frontend.Variable {
 			panic("inverse by constant(0)")
 		}
 
-		builder.cs.Inverse(&c)
+		c = builder.cs.Inverse(c)
 		return expr.NewLinearExpression(0, c)
 	}
 
@@ -449,7 +449,7 @@ func (builder *builder) Select(i0, i1, i2 frontend.Variable) frontend.Variable {
 
 	if c, ok := builder.constantValue(cond); ok {
 		// condition is a constant return i1 if true, i2 if false
-		if builder.isCstOne(&c) {
+		if builder.isCstOne(c) {
 			return vars[1]
 		}
 		return vars[2]
@@ -459,7 +459,7 @@ func (builder *builder) Select(i0, i1, i2 frontend.Variable) frontend.Variable {
 	n2, ok2 := builder.constantValue(vars[2])
 
 	if ok1 && ok2 {
-		builder.cs.Sub(&n1, &n2)
+		n1 = builder.cs.Sub(n1, n2)
 		res := builder.Mul(cond, n1)    // no constraint is recorded
 		res = builder.Add(res, vars[2]) // no constraint is recorded
 		return res
@@ -496,8 +496,8 @@ func (builder *builder) Lookup2(b0, b1 frontend.Variable, i0, i1, i2, i3 fronten
 	c1, b1IsConstant := builder.constantValue(s1)
 
 	if b0IsConstant && b1IsConstant {
-		b0 := builder.isCstOne(&c0)
-		b1 := builder.isCstOne(&c1)
+		b0 := builder.isCstOne(c0)
+		b1 := builder.isCstOne(c1)
 
 		if !b0 && !b1 {
 			return in0
@@ -668,7 +668,7 @@ func (builder *builder) negateLinExp(l expr.LinearExpression) expr.LinearExpress
 	res := make(expr.LinearExpression, len(l))
 	copy(res, l)
 	for i := 0; i < len(res); i++ {
-		builder.cs.Neg(&res[i].Coeff)
+		res[i].Coeff = builder.cs.Neg(res[i].Coeff)
 	}
 	return res
 }

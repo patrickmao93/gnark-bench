@@ -210,10 +210,10 @@ func (b *BlueprintSparseR1CMul) CompressSparseR1C(c *SparseR1C) []uint32 {
 }
 
 type Solver interface {
-	CoeffEngine
-	GetValue(cID, vID uint32) Coeff
-	GetCoeff(cID uint32) Coeff
-	SetValue(vID uint32, f Coeff)
+	Field
+	GetValue(cID, vID uint32) Element
+	GetCoeff(cID uint32) Element
+	SetValue(vID uint32, f Element)
 }
 
 func (b *BlueprintSparseR1CMul) Solve(s Solver, calldata []uint32) {
@@ -221,7 +221,7 @@ func (b *BlueprintSparseR1CMul) Solve(s Solver, calldata []uint32) {
 	m1 := s.GetValue(CoeffIdOne, calldata[2])
 	// qO := s.GetCoeff(calldata[3])
 
-	m0 = s.Mul2(m0, m1)
+	m0 = s.Mul(m0, m1)
 	// m0.Div(qO)
 
 	s.SetValue(calldata[3], m0)
