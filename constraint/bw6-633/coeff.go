@@ -46,7 +46,7 @@ func newCoeffTable(capacity int) CoeffTable {
 
 }
 
-func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constraint.Term {
+func (ct *CoeffTable) AddCoeff(coeff constraint.Element) uint32 {
 	c := (*fr.Element)(coeff[:])
 	var cID uint32
 	if c.IsZero() {
@@ -69,7 +69,11 @@ func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constr
 			ct.mCoeffs[cc] = cID
 		}
 	}
+	return cID
+}
 
+func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constraint.Term {
+	cID := ct.AddCoeff(*coeff)
 	return constraint.Term{VID: uint32(variableID), CID: cID}
 }
 

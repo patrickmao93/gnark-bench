@@ -167,12 +167,11 @@ func Setup(spr *cs.SparseR1CS) (*ProvingKey, *VerifyingKey, error) {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
 			bc.DecompressSparseR1C(&sparseR1C, calldata)
-			pk.EvaluationQlDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.L.CoeffID()])
-			pk.EvaluationQrDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.R.CoeffID()])
-			pk.EvaluationQmDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.M[0].CoeffID()]).
-				Mul(&pk.EvaluationQmDomainBigBitReversed[offset+j], &spr.Coefficients[sparseR1C.M[1].CoeffID()])
-			pk.EvaluationQoDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.O.CoeffID()])
-			pk.LQkIncompleteDomainSmall[offset+j].Set(&spr.Coefficients[sparseR1C.K])
+			pk.EvaluationQlDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.QL])
+			pk.EvaluationQrDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.QR])
+			pk.EvaluationQmDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.QM])
+			pk.EvaluationQoDomainBigBitReversed[offset+j].Set(&spr.Coefficients[sparseR1C.QO])
+			pk.LQkIncompleteDomainSmall[offset+j].Set(&spr.Coefficients[sparseR1C.QC])
 			pk.CQkIncomplete[offset+j].Set(&pk.LQkIncompleteDomainSmall[offset+j])
 
 			j++
@@ -280,9 +279,9 @@ func buildPermutation(spr *cs.SparseR1CS, pk *ProvingKey) {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
 			bc.DecompressSparseR1C(&sparseR1C, calldata)
-			lro[offset+j] = sparseR1C.L.WireID()
-			lro[sizeSolution+offset+j] = sparseR1C.R.WireID()
-			lro[2*sizeSolution+offset+j] = sparseR1C.O.WireID()
+			lro[offset+j] = int(sparseR1C.XA)
+			lro[sizeSolution+offset+j] = int(sparseR1C.XB)
+			lro[2*sizeSolution+offset+j] = int(sparseR1C.XC)
 			j++
 
 		} else {

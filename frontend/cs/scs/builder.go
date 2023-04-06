@@ -141,34 +141,36 @@ func (builder *builder) addMulGate(a, b, c expr.Term) {
 	}
 	qM := builder.cs.Mul(a.Coeff, b.Coeff)
 
-	m1 := builder.cs.MakeTerm(&qM, a.VID)
-	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
-	o := builder.cs.MakeTerm(&qO, c.VID)
-	l := builder.cs.MakeTerm(&constraint.Element{}, a.VID)
-	r := builder.cs.MakeTerm(&constraint.Element{}, b.VID)
+	QM := builder.cs.AddCoeff(qM)
+	QO := builder.cs.AddCoeff(qO)
 
-	// we put l and r here because... wire id is used in level builder :s
-	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.mulGate)
+	builder.cs.AddSparseR1C(constraint.SparseR1C{
+		XA: uint32(a.VID),
+		XB: uint32(b.VID),
+		XC: uint32(c.VID),
+		QM: QM,
+		QO: QO,
+	}, builder.genericGate)
 }
 
 func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {
 	qO := builder.tMinusOne
 	if c.Coeff != builder.tOne {
 		// slow path
-		t := c.Coeff
-		qO = builder.cs.Neg(t)
+		qO = builder.cs.Neg(c.Coeff)
 	}
-	qM := a.Coeff
-	qM = builder.cs.Mul(qM, b.Coeff)
+	qM := builder.cs.Mul(a.Coeff, b.Coeff)
 
-	m1 := builder.cs.MakeTerm(&qM, a.VID)
-	m2 := builder.cs.MakeTerm(&builder.tOne, b.VID)
-	o := builder.cs.MakeTerm(&qO, c.VID)
-	l := builder.cs.MakeTerm(&constraint.Element{}, a.VID)
-	r := builder.cs.MakeTerm(&constraint.Element{}, b.VID)
+	QM := builder.cs.AddCoeff(qM)
+	QO := builder.cs.AddCoeff(qO)
 
-	// we put l and r here because... wire id is used in level builder :s
-	builder.cs.AddSparseR1C(constraint.SparseR1C{L: l, R: r, O: o, M: [2]constraint.Term{m1, m2}}, builder.genericGate)
+	builder.cs.AddSparseR1C(constraint.SparseR1C{
+		XA: uint32(a.VID),
+		XB: uint32(b.VID),
+		XC: uint32(c.VID),
+		QM: QM,
+		QO: QO,
+	}, builder.genericGate)
 }
 
 // addPlonkConstraint adds a sparseR1C to the underlying constraint system
@@ -179,15 +181,21 @@ func (builder *builder) addPlonkConstraint(c sparseR1C, debugInfo ...constraint.
 		log := logger.Logger()
 		log.Warn().Msg("adding a plonk constraint with qM set but xa or xb == 0 (wire 0)")
 	}
-	L := builder.cs.MakeTerm(&c.qL, c.xa)
-	R := builder.cs.MakeTerm(&c.qR, c.xb)
-	O := builder.cs.MakeTerm(&c.qO, c.xc)
-	U := builder.cs.MakeTerm(&c.qM, c.xa)
-	V := builder.cs.MakeTerm(&builder.tOne, c.xb)
-	K := builder.cs.MakeTerm(&c.qC, 0)
-	K.MarkConstant()
+	QL := builder.cs.AddCoeff(c.qL)
+	QR := builder.cs.AddCoeff(c.qR)
+	QO := builder.cs.AddCoeff(c.qO)
+	QM := builder.cs.AddCoeff(c.qM)
+	QC := builder.cs.AddCoeff(c.qC)
 
-	cID := builder.cs.AddSparseR1C(constraint.SparseR1C{L: L, R: R, O: O, M: [2]constraint.Term{U, V}, K: K.CoeffID(), Commitment: c.commitment}, builder.genericGate)
+	cID := builder.cs.AddSparseR1C(constraint.SparseR1C{
+		XA: uint32(c.xa),
+		XB: uint32(c.xb),
+		XC: uint32(c.xc),
+		QL: QL,
+		QR: QR,
+		QO: QO,
+		QM: QM,
+		QC: QC, Commitment: c.commitment}, builder.genericGate)
 	if debug.Debug && len(debugInfo) == 1 {
 		builder.cs.AttachDebugInfo(debugInfo[0], []int{cID})
 	}

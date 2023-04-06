@@ -120,7 +120,7 @@ func (system *SparseR1CSCore) CheckUnconstrainedWires() error {
 	// return errors.New(sbb.String())
 }
 
-type CommitmentConstraint byte
+type CommitmentConstraint uint32
 
 const (
 	NOT        CommitmentConstraint = 0
@@ -128,14 +128,12 @@ const (
 	COMMITMENT CommitmentConstraint = 2
 )
 
-// SparseR1C used to compute the wires
-// L+R+M[0]M[1]+O+k-committed?*PI2-commitment?*commitmentValue=0
-// if a Term is zero, it means the field doesn't exist (ex M=[0,0] means there is no multiplicative term)
+// SparseR1C represent a PlonK-ish constraint
+// qL⋅xa + qR⋅xb + qO⋅xc + qM⋅(xaxb) + qC -committed?*PI2-commitment?*commitmentValue == 0
 type SparseR1C struct {
-	L, R, O    Term
-	M          [2]Term
-	K          int // stores only the ID of the constant term that is used
-	Commitment CommitmentConstraint
+	XA, XB, XC         uint32
+	QL, QR, QO, QM, QC uint32
+	Commitment         CommitmentConstraint
 }
 
 func (c *SparseR1C) Clear() {
@@ -149,13 +147,13 @@ func (c *SparseR1C) WireIterator() func() int {
 		switch curr {
 		case 0:
 			curr++
-			return c.L.WireID()
+			return int(c.XA)
 		case 1:
 			curr++
-			return c.R.WireID()
+			return int(c.XB)
 		case 2:
 			curr++
-			return c.O.WireID()
+			return int(c.XC)
 		}
 		return -1
 	}
@@ -164,14 +162,14 @@ func (c *SparseR1C) WireIterator() func() int {
 // String formats the constraint as qL⋅xa + qR⋅xb + qO⋅xc + qM⋅(xaxb) + qC == 0
 func (c *SparseR1C) String(r Resolver) string {
 	sbb := NewStringBuilder(r)
-	sbb.WriteTerm(c.L)
+	sbb.WriteTerm(Term{CID: c.QL, VID: c.XA})
 	sbb.WriteString(" + ")
-	sbb.WriteTerm(c.R)
+	sbb.WriteTerm(Term{CID: c.QR, VID: c.XB})
 	sbb.WriteString(" + ")
-	sbb.WriteTerm(c.O)
-	if qM := sbb.CoeffToString(c.M[0].CoeffID()); qM != "0" {
-		xa := sbb.VariableToString(c.M[0].WireID())
-		xb := sbb.VariableToString(c.M[1].WireID())
+	sbb.WriteTerm(Term{CID: c.QO, VID: c.XC})
+	if qM := sbb.CoeffToString(int(c.QM)); qM != "0" {
+		xa := sbb.VariableToString(int(c.XA))
+		xb := sbb.VariableToString(int(c.XB))
 		sbb.WriteString(" + ")
 		sbb.WriteString(qM)
 		sbb.WriteString("⋅(")
@@ -181,7 +179,7 @@ func (c *SparseR1C) String(r Resolver) string {
 		sbb.WriteByte(')')
 	}
 	sbb.WriteString(" + ")
-	sbb.WriteString(r.CoeffToString(c.K))
+	sbb.WriteString(r.CoeffToString(int(c.QC)))
 	sbb.WriteString(" == 0")
 	return sbb.String()
 }

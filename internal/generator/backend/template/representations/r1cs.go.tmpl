@@ -562,9 +562,9 @@ func (cs *R1CS) evaluateLROSmallDomain(solution []fr.Element) ([]fr.Element, []f
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			bc.DecompressSparseR1C(&sparseR1C, cs.GetCallData(inst))
 
-			l[offset+j] = solution[sparseR1C.L.WireID()]
-			r[offset+j] = solution[sparseR1C.R.WireID()]
-			o[offset+j] = solution[sparseR1C.O.WireID()]
+			l[offset+j] = solution[sparseR1C.XA]
+			r[offset+j] = solution[sparseR1C.XB]
+			o[offset+j] = solution[sparseR1C.XC]
 			j++
 		} else {
 			// TODO need to handle block of constraints.

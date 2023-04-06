@@ -39,17 +39,17 @@ func NewSparseR1CS(capacity int) *R1CS {
 // if there is no remaining wire to solve, returns -1
 // else returns the wire position (L -> 0, R -> 1, O -> 2)
 func (cs *R1CS) findUnsolvedWire(c *constraint.SparseR1C, solution *solution) int {
-	lID, rID, oID := c.L.WireID(), c.R.WireID(), c.O.WireID()
+	lID, rID, oID := c.XA, c.XB, c.XC
 
-	if (c.L.CoeffID() != 0 || c.M[0].CoeffID() != 0) && !solution.solved[lID] {
+	if (c.QL != 0 || c.QM != 0) && !solution.solved[lID] {
 		return 0
 	}
 
-	if (c.R.CoeffID() != 0 || c.M[1].CoeffID() != 0) && !solution.solved[rID] {
+	if (c.QR != 0 || c.QM != 0) && !solution.solved[rID] {
 		return 1
 	}
 
-	if (c.O.CoeffID() != 0) && !solution.solved[oID] {
+	if (c.QO != 0) && !solution.solved[oID] {
 		return 2
 	}
 	return -1
@@ -71,60 +71,59 @@ func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution, coef
 		return nil
 	}
 	if lro == 1 { // we solve for R: u1L+u2R+u3LR+u4O+k=0 => R(u2+u3L)+u1L+u4O+k = 0
-		if !solution.solved[c.L.WireID()] {
+		if !solution.solved[c.XA] {
 			panic("L wire should be instantiated when we solve R")
 		}
 		var u1, u2, u3, den, num, v1, v2 fr.Element
-		u3.Mul(&cs.Coefficients[c.M[0].CoeffID()], &cs.Coefficients[c.M[1].CoeffID()])
-		u1.Set(&cs.Coefficients[c.L.CoeffID()])
-		u2.Set(&cs.Coefficients[c.R.CoeffID()])
-		den.Mul(&u3, &solution.values[c.L.WireID()]).Add(&den, &u2)
+		u3.Set(&cs.Coefficients[c.QM])
+		u1.Set(&cs.Coefficients[c.QL])
+		u2.Set(&cs.Coefficients[c.QR])
+		den.Mul(&u3, &solution.values[c.XA]).Add(&den, &u2)
 
-		v1 = solution.computeTerm(c.L)
-		v2 = solution.computeTerm(c.O)
-		num.Add(&v1, &v2).Add(&num, &cs.Coefficients[c.K])
+		v1 = solution.computeTerm(constraint.Term{CID: c.QL, VID: c.XA})
+		v2 = solution.computeTerm(constraint.Term{CID: c.QO, VID: c.XC})
+		num.Add(&v1, &v2).Add(&num, &cs.Coefficients[c.QC])
 
 		// TODO find a way to do lazy div (/ batch inversion)
 		num.Div(&num, &den).Neg(&num)
-		solution.set(c.L.WireID(), num)
+		solution.set(int(c.XA), num)
 		return nil
 	}
 
 	if lro == 0 { // we solve for L: u1L+u2R+u3LR+u4O+k=0 => L(u1+u3R)+u2R+u4O+k = 0
-		if !solution.solved[c.R.WireID()] {
+		if !solution.solved[c.XB] {
 			panic("R wire should be instantiated when we solve L")
 		}
 		var u1, u2, u3, den, num, v1, v2 fr.Element
-		u3.Mul(&cs.Coefficients[c.M[0].CoeffID()], &cs.Coefficients[c.M[1].CoeffID()])
-		u1.Set(&cs.Coefficients[c.L.CoeffID()])
-		u2.Set(&cs.Coefficients[c.R.CoeffID()])
-		den.Mul(&u3, &solution.values[c.R.WireID()]).Add(&den, &u1)
+		u3.Set(&cs.Coefficients[c.QM])
+		u1.Set(&cs.Coefficients[c.QL])
+		u2.Set(&cs.Coefficients[c.QR])
+		den.Mul(&u3, &solution.values[c.XB]).Add(&den, &u1)
 
-		v1 = solution.computeTerm(c.R)
-		v2 = solution.computeTerm(c.O)
-		num.Add(&v1, &v2).Add(&num, &cs.Coefficients[c.K])
+		v1 = solution.computeTerm(constraint.Term{CID: c.QR, VID: c.XB})
+		v2 = solution.computeTerm(constraint.Term{CID: c.QO, VID: c.XC})
+		num.Add(&v1, &v2).Add(&num, &cs.Coefficients[c.QC])
 
 		// TODO find a way to do lazy div (/ batch inversion)
 		num.Div(&num, &den).Neg(&num)
-		solution.set(c.L.WireID(), num)
+		solution.set(int(c.XA), num)
 		return nil
 
 	}
 	// O we solve for O
 	var o fr.Element
-	cID, vID := c.O.CoeffID(), c.O.WireID()
+	cID, vID := c.QO, c.XC
 
-	l := solution.computeTerm(c.L)
-	r := solution.computeTerm(c.R)
-	m0 := solution.computeTerm(c.M[0])
-	m1 := solution.computeTerm(c.M[1])
+	l := solution.computeTerm(constraint.Term{CID: c.QL, VID: c.XA})
+	r := solution.computeTerm(constraint.Term{CID: c.QR, VID: c.XB})
+	m0 := solution.computeTerm(constraint.Term{CID: c.QM, VID: c.XA})
+	m1 := solution.values[c.XB]
 
-	// o = - ((m0 * m1) + l + r + c.K) / c.O
-	o.Mul(&m0, &m1).Add(&o, &l).Add(&o, &r).Add(&o, &cs.Coefficients[c.K])
+	// o = - ((m0 * m1) + l + r + c.QC) / c.O
+	o.Mul(&m0, &m1).Add(&o, &l).Add(&o, &r).Add(&o, &cs.Coefficients[c.QC])
 	o.Mul(&o, &coefficientsNegInv[cID])
 
-	solution.set(vID, o)
-
+	solution.set(int(vID), o)
 	return nil
 }
 
@@ -160,15 +159,16 @@ func (cs *R1CS) checkConstraint(c *constraint.SparseR1C, solution *solution) err
 		return nil // these are there for enforcing the correctness of the commitment and can be skipped in solving time
 	}
 
-	l := solution.computeTerm(c.L)
-	r := solution.computeTerm(c.R)
-	m0 := solution.computeTerm(c.M[0])
-	m1 := solution.computeTerm(c.M[1])
-	o := solution.computeTerm(c.O)
+	l := solution.computeTerm(constraint.Term{CID: c.QL, VID: c.XA})
+	r := solution.computeTerm(constraint.Term{CID: c.QR, VID: c.XB})
+	m0 := solution.computeTerm(constraint.Term{CID: c.QM, VID: c.XA})
+	m1 := solution.values[c.XB]
 
-	// l + r + (m0 * m1) + o + c.K == 0
+	o := solution.computeTerm(constraint.Term{CID: c.QO, VID: c.XC})
+
+	// l + r + (m0 * m1) + o + c.QC == 0
 	var t fr.Element
-	t.Mul(&m0, &m1).Add(&t, &l).Add(&t, &r).Add(&t, &o).Add(&t, &cs.Coefficients[c.K])
+	t.Mul(&m0, &m1).Add(&t, &l).Add(&t, &r).Add(&t, &o).Add(&t, &cs.Coefficients[c.QC])
 	if !t.IsZero() {
 		return fmt.Errorf("qL⋅xa + qR⋅xb + qO⋅xc + qM⋅(xaxb) + qC != 0 → %s + %s + %s + (%s × %s) + %s != 0",
 			l.String(),
@@ -176,7 +176,7 @@ func (cs *R1CS) checkConstraint(c *constraint.SparseR1C, solution *solution) err
 			o.String(),
 			m0.String(),
 			m1.String(),
-			cs.Coefficients[c.K].String(),
+			cs.Coefficients[c.QC].String(),
 		)
 	}
 	return nil

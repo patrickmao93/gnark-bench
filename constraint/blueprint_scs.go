@@ -12,37 +12,31 @@ func (b *BlueprintGenericSparseR1C) NbConstraints() int {
 func (b *BlueprintGenericSparseR1C) CompressSparseR1C(c *SparseR1C) []uint32 {
 	return []uint32{
 		// generic plonk constraint, the wires first
-		c.L.VID,
-		c.R.VID,
-		c.O.VID,
-		// coeffs
-		c.L.CID,
-		c.R.CID,
-		c.O.CID,
-		c.M[0].CID,
-		c.M[1].CID,
-		uint32(c.K),
+		c.XA,
+		c.XB,
+		c.XC,
+		c.QL,
+		c.QR,
+		c.QO,
+		c.QM,
+		c.QC,
 		uint32(c.Commitment),
 	}
 }
 
 func (b *BlueprintGenericSparseR1C) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
 	c.Clear()
-
+	// TODO @gbotrel use unsafe ptr;
 	// calldata := cs.CallData[instruction.StartCallData : instruction.StartCallData+uint32(b.NbInputs())]
-
-	c.L.VID = calldata[0]
-	c.R.VID = calldata[1]
-	c.O.VID = calldata[2]
-	c.L.CID = calldata[3]
-	c.R.CID = calldata[4]
-	c.O.CID = calldata[5]
-	c.M[0].CID = calldata[6]
-	c.M[1].CID = calldata[7]
-	c.M[0].VID = c.L.VID
-	c.M[1].VID = c.R.VID
-	c.K = int(calldata[8])
-	c.Commitment = CommitmentConstraint(calldata[9])
+	c.XA = calldata[0]
+	c.XB = calldata[1]
+	c.XC = calldata[2]
+	c.QL = calldata[3]
+	c.QR = calldata[4]
+	c.QO = calldata[5]
+	c.QM = calldata[6]
+	c.QC = calldata[7]
+	c.Commitment = CommitmentConstraint(calldata[8])
 }
 
 type BlueprintSparseR1CMul struct{}
@@ -56,35 +50,29 @@ func (b *BlueprintSparseR1CMul) NbConstraints() int {
 
 func (b *BlueprintSparseR1CMul) CompressSparseR1C(c *SparseR1C) []uint32 {
 	return []uint32{
-		c.M[0].CID,
-		c.M[0].VID,
-		c.M[1].VID,
-		c.O.VID,
+		c.XA,
+		c.XB,
+		c.XC,
+		c.QM,
 	}
 }
 
 func (b *BlueprintSparseR1CMul) Solve(s Solver, calldata []uint32) {
-	m0 := s.GetValue(calldata[0], calldata[1])
-	m1 := s.GetValue(CoeffIdOne, calldata[2])
+	m0 := s.GetValue(calldata[3], calldata[0])
+	m1 := s.GetValue(CoeffIdOne, calldata[1])
 	// qO := s.GetCoeff(calldata[3])
 
 	m0 = s.Mul(m0, m1)
 	// m0.Div(qO)
 
-	s.SetValue(calldata[3], m0)
+	s.SetValue(calldata[2], m0)
 
 }
 
 func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
 	c.Clear()
-
-	c.M[0].CID = calldata[0]
-	c.M[0].VID = calldata[1]
-	c.M[1].CID = CoeffIdOne
-	c.M[1].VID = calldata[2]
-	c.O.CID = CoeffIdMinusOne
-	c.O.VID = calldata[3]
-
-	c.L.VID = c.M[0].VID
-	c.R.VID = c.M[1].VID
+	c.XA = calldata[0]
+	c.XB = calldata[1]
+	c.XC = calldata[2]
+	c.QM = calldata[3]
 }

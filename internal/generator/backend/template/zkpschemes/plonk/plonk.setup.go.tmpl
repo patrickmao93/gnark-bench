@@ -251,12 +251,11 @@ func BuildTrace(spr *cs.SparseR1CS, pt *Trace) {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
 			bc.DecompressSparseR1C(&sparseR1C, calldata)
-			ql[offset+j].Set(&spr.Coefficients[sparseR1C.L.CoeffID()])
-			qr[offset+j].Set(&spr.Coefficients[sparseR1C.R.CoeffID()])
-			qm[offset+j].Set(&spr.Coefficients[sparseR1C.M[0].CoeffID()]).
-				Mul(&qm[offset+j], &spr.Coefficients[sparseR1C.M[1].CoeffID()])
-			qo[offset+j].Set(&spr.Coefficients[sparseR1C.O.CoeffID()])
-			qk[offset+j].Set(&spr.Coefficients[sparseR1C.K])
+			ql[offset+j].Set(&spr.Coefficients[sparseR1C.QL])
+			qr[offset+j].Set(&spr.Coefficients[sparseR1C.QR])
+			qm[offset+j].Set(&spr.Coefficients[sparseR1C.QM])
+			qo[offset+j].Set(&spr.Coefficients[sparseR1C.QO])
+			qk[offset+j].Set(&spr.Coefficients[sparseR1C.QC])
 
 
 			j++
@@ -388,9 +387,9 @@ func buildPermutation(spr *cs.SparseR1CS, pt *Trace, nbVariables int) {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			calldata := spr.CallData[inst.StartCallData : inst.StartCallData+uint64(blueprint.NbInputs())]
 			bc.DecompressSparseR1C(&sparseR1C, calldata)
-			lro[offset+j] = sparseR1C.L.WireID()
-			lro[sizeSolution+offset+j] = sparseR1C.R.WireID()
-			lro[2*sizeSolution+offset+j] = sparseR1C.O.WireID()
+			lro[offset+j] = int(sparseR1C.XA)
+			lro[sizeSolution+offset+j] = int(sparseR1C.XB)
+			lro[2*sizeSolution+offset+j] = int(sparseR1C.XC)
 
 			j++
 
