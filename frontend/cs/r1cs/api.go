@@ -57,7 +57,7 @@ func (builder *builder) MulAcc(a, b, c frontend.Variable) frontend.Variable {
 		// v1 and v2 are both unknown, this is the only case we add a constraint
 		if !v1Constant && !v2Constant {
 			res := builder.newInternalVariable()
-			builder.cs.AddConstraint(builder.newR1C(b, c, res), builder.genericGate)
+			builder.cs.AddR1C(builder.newR1C(b, c, res), builder.genericGate)
 			builder.mbuf1 = append(builder.mbuf1, res...)
 			return
 		}
@@ -204,7 +204,7 @@ func (builder *builder) Mul(i1, i2 frontend.Variable, in ...frontend.Variable) f
 		// v1 and v2 are both unknown, this is the only case we add a constraint
 		if !v1Constant && !v2Constant {
 			res := builder.newInternalVariable()
-			builder.cs.AddConstraint(builder.newR1C(v1, v2, res), builder.genericGate)
+			builder.cs.AddR1C(builder.newR1C(v1, v2, res), builder.genericGate)
 			return res
 		}
 
@@ -257,7 +257,7 @@ func (builder *builder) DivUnchecked(i1, i2 frontend.Variable) frontend.Variable
 	if !v2Constant {
 		res := builder.newInternalVariable()
 		// note that here we don't ensure that divisor is != 0
-		cID := builder.cs.AddConstraint(builder.newR1C(v2, res, v1), builder.genericGate)
+		cID := builder.cs.AddR1C(builder.newR1C(v2, res, v1), builder.genericGate)
 		if debug.Debug {
 			debug := builder.newDebugInfo("div", v1, "/", v2, " == ", res)
 			builder.cs.AttachDebugInfo(debug, []int{cID})
@@ -297,8 +297,8 @@ func (builder *builder) Div(i1, i2 frontend.Variable) frontend.Variable {
 		debug := builder.newDebugInfo("div", v1, "/", v2, " == ", res)
 		v2Inv := builder.newInternalVariable()
 		// note that here we ensure that v2 can't be 0, but it costs us one extra constraint
-		c1 := builder.cs.AddConstraint(builder.newR1C(v2, v2Inv, builder.cstOne()), builder.genericGate)
-		c2 := builder.cs.AddConstraint(builder.newR1C(v1, v2Inv, res), builder.genericGate)
+		c1 := builder.cs.AddR1C(builder.newR1C(v2, v2Inv, builder.cstOne()), builder.genericGate)
+		c2 := builder.cs.AddR1C(builder.newR1C(v1, v2Inv, res), builder.genericGate)
 		builder.cs.AttachDebugInfo(debug, []int{c1, c2})
 		return res
 	}
@@ -334,7 +334,7 @@ func (builder *builder) Inverse(i1 frontend.Variable) frontend.Variable {
 	// allocate resulting frontend.Variable
 	res := builder.newInternalVariable()
 
-	cID := builder.cs.AddConstraint(builder.newR1C(res, vars[0], builder.cstOne()), builder.genericGate)
+	cID := builder.cs.AddR1C(builder.newR1C(res, vars[0], builder.cstOne()), builder.genericGate)
 	if debug.Debug {
 		debug := builder.newDebugInfo("inverse", vars[0], "*", res, " == 1")
 		builder.cs.AttachDebugInfo(debug, []int{cID})
@@ -414,7 +414,7 @@ func (builder *builder) Or(_a, _b frontend.Variable) frontend.Variable {
 
 	c = append(c, a...)
 	c = append(c, b...)
-	builder.cs.AddConstraint(builder.newR1C(a, b, c), builder.genericGate)
+	builder.cs.AddR1C(builder.newR1C(a, b, c), builder.genericGate)
 
 	return res
 }
@@ -558,10 +558,10 @@ func (builder *builder) IsZero(i1 frontend.Variable) frontend.Variable {
 	}
 
 	// m = -a*x + 1         // constrain m to be 1 if a == 0
-	c1 := builder.cs.AddConstraint(builder.newR1C(builder.Neg(a), x[0], builder.Sub(m, 1)), builder.genericGate)
+	c1 := builder.cs.AddR1C(builder.newR1C(builder.Neg(a), x[0], builder.Sub(m, 1)), builder.genericGate)
 
 	// a * m = 0            // constrain m to be 0 if a != 0
-	c2 := builder.cs.AddConstraint(builder.newR1C(a, m, builder.cstZero()), builder.genericGate)
+	c2 := builder.cs.AddR1C(builder.newR1C(a, m, builder.cstZero()), builder.genericGate)
 
 	builder.cs.AttachDebugInfo(debug, []int{c1, c2})
 

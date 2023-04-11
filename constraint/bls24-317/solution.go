@@ -20,9 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/field/pool"
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/constraint/solver"
 	"github.com/consensys/gnark/debug"
+	"github.com/consensys/gnark/internal/utils"
 	"github.com/rs/zerolog"
 	"io"
 	"math/big"
@@ -33,48 +35,23 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls24-317/fr"
 )
 
-// solution represents elements needed to compute
-// a solution to a R1CS or SparseR1CS
+// solution represent the state of the Solver during a call to System.Solve(...)
 type solution struct {
 	arithEngine
+
+	cs *constraint.System
+	st *debug.SymbolTable
+
+	// values, coefficients and solved are index by the wire (variable) id
 	values, coefficients []fr.Element
 	solved               []bool
 	nbSolved             uint64
-	mHintsFunctions      map[solver.HintID]solver.Hint // maps hintID to hint function
-	st                   *debug.SymbolTable
-	cs                   *constraint.System
 
-	a, b, c            fr.Vector
-	coefficientsNegInv fr.Vector
-}
+	// maps hintID to hint function
+	mHintsFunctions map[solver.HintID]solver.Hint
 
-// Implement constraint.Solver
-
-func (s *solution) GetValue(cID, vID uint32) constraint.Element {
-	var r constraint.Element
-	e := s.computeTerm(constraint.Term{CID: cID, VID: vID})
-	copy(r[:], e[:])
-	return r
-}
-func (s *solution) GetCoeff(cID uint32) constraint.Element {
-	var r constraint.Element
-	copy(r[:], s.coefficients[cID][:])
-	return r
-}
-func (s *solution) SetValue(vID uint32, f constraint.Element) {
-	s.set(int(vID), fr.Element(f[:]))
-}
-
-func (s *solution) GetWireValue(i int) constraint.Element {
-	var c constraint.Element
-	copy(c[:], s.values[i][:])
-	return c
-}
-
-func (s *solution) SetWireValue(i int, c constraint.Element) {
-	var e fr.Element
-	copy(e[:], c[:])
-	s.set(i, e)
+	a, b, c            fr.Vector // R1CS solver will compute the a,b,c matrices
+	coefficientsNegInv fr.Vector // TODO @gbotrel this should be computed once SparseR1CS solver perf.
 }
 
 func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element, isR1CS bool) (solution, error) {
@@ -123,14 +100,15 @@ func (s *solution) set(id int, value fr.Element) {
 	s.values[id] = value
 	s.solved[id] = true
 	atomic.AddUint64(&s.nbSolved, 1)
-	// s.nbSolved++
 }
 
+// isValid returns true if all wires are solved
 func (s *solution) isValid() bool {
 	return int(s.nbSolved) == len(s.values)
 }
 
 // computeTerm computes coeff*variable
+// TODO @gbotrel check if t is a Constant only
 func (s *solution) computeTerm(t constraint.Term) fr.Element {
 	cID, vID := t.CoeffID(), t.WireID()
 	if cID != 0 && !s.solved[vID] {
@@ -157,16 +135,10 @@ func (s *solution) computeTerm(t constraint.Term) fr.Element {
 }
 
 // r += (t.coeff*t.value)
+// TODO @gbotrel check t.IsConstant on the caller side when necessary
 func (s *solution) accumulateInto(t constraint.Term, r *fr.Element) {
 	cID := t.CoeffID()
 	vID := t.WireID()
-
-	// if t.IsConstant() {
-	// 	// needed for logs, we may want to not put this in the hot path if we need to
-	// 	// optimize constraint system solver further.
-	// 	r.Add(r, &s.coefficients[cID])
-	// 	return
-	// }
 
 	switch cID {
 	case constraint.CoeffIdZero:
@@ -186,15 +158,8 @@ func (s *solution) accumulateInto(t constraint.Term, r *fr.Element) {
 	}
 }
 
-// solveHint compute solution.values[vID] using provided solver hint
+// solveWithHint executes a hint and assign the result to its defined outputs.
 func (s *solution) solveWithHint(h constraint.HintMapping) error {
-	// skip if the wire is already solved by a call to the same hint
-	// function on the same inputs
-	// TODO sanity check this shouldn't happen.
-	// if s.solved[vID] {
-	//     return nil
-	// }
-
 	// ensure hint function was provided
 	f, ok := s.mHintsFunctions[h.HintID]
 	if !ok {
@@ -207,37 +172,13 @@ func (s *solution) solveWithHint(h constraint.HintMapping) error {
 	inputs := make([]*big.Int, nbInputs)
 	outputs := make([]*big.Int, nbOutputs)
 	for i := 0; i < nbOutputs; i++ {
-		outputs[i] = big.NewInt(0)
+		outputs[i] = pool.BigInt.Get()
+		outputs[i].SetUint64(0)
 	}
 
 	q := fr.Modulus()
 
-	// // for each input, we set its big int value, IF all the wires are solved
-	// // the only case where all wires may not be solved, is if one of the input of this hint
-	// // is the output of another hint.
-	// // it is safe to recursively solve this with the parallel solver, since all hints-output wires
-	// // that we can solve this way are marked to be solved with the current constraint we are processing.
-	// recursiveSolve := func(t constraint.Term) error {
-	// 	if t.IsConstant() {
-	// 		return nil
-	// 	}
-	// 	wID := t.WireID()
-	// 	if s.solved[wID] {
-	// 		return nil
-	// 	}
-	// 	// unsolved dependency
-	// 	if h, ok := s.cs.MHints[wID]; ok {
-	// 		// solve recursively.
-	// 		return s.solveWithHint(wID, h)
-	// 	}
-
-	// 	// it's not a hint, we panic.
-	// 	panic("solver can't compute hint; one or more input wires are unsolved")
-	// }
-
 	for i := 0; i < nbInputs; i++ {
-		inputs[i] = big.NewInt(0)
-
 		var v fr.Element
 		for _, term := range h.Inputs[i] {
 			if term.IsConstant() {
@@ -246,6 +187,7 @@ func (s *solution) solveWithHint(h constraint.HintMapping) error {
 			}
 			s.accumulateInto(term, &v)
 		}
+		inputs[i] = pool.BigInt.Get()
 		v.BigInt(inputs[i])
 	}
 
@@ -255,6 +197,11 @@ func (s *solution) solveWithHint(h constraint.HintMapping) error {
 	for i := range outputs {
 		v.SetBigInt(outputs[i])
 		s.set(h.Outputs[i], v)
+		pool.BigInt.Put(outputs[i])
+	}
+
+	for i := range inputs {
+		pool.BigInt.Put(inputs[i])
 	}
 
 	return err
@@ -330,6 +277,22 @@ func (s *solution) logValue(log constraint.LogEntry) string {
 		toResolve = append(toResolve, sbb.String())
 	}
 	return fmt.Sprintf(log.Format, toResolve...)
+}
+
+// Implement constraint.Solver
+func (s *solution) GetValue(cID, vID uint32) constraint.Element {
+	var r constraint.Element
+	e := s.computeTerm(constraint.Term{CID: cID, VID: vID})
+	copy(r[:], e[:])
+	return r
+}
+func (s *solution) GetCoeff(cID uint32) constraint.Element {
+	var r constraint.Element
+	copy(r[:], s.coefficients[cID][:])
+	return r
+}
+func (s *solution) SetValue(vID uint32, f constraint.Element) {
+	s.set(int(vID), fr.Element(f[:]))
 }
 
 // UnsatisfiedConstraintError wraps an error with useful metadata on the unsatisfied constraint
@@ -427,4 +390,91 @@ func (t *SparseR1CSSolution) ReadFrom(r io.Reader) (int64, error) {
 	a, err = t.O.ReadFrom(r)
 	a += n
 	return n, err
+}
+
+// implements constraint.Field
+type arithEngine struct{}
+
+var _ constraint.Field = &arithEngine{}
+
+var (
+	two      fr.Element
+	minusOne fr.Element
+	minusTwo fr.Element
+)
+
+func init() {
+	minusOne.SetOne()
+	minusOne.Neg(&minusOne)
+	two.SetOne()
+	two.Double(&two)
+	minusTwo.Neg(&two)
+}
+
+func (engine *arithEngine) FromInterface(i interface{}) constraint.Element {
+	var e fr.Element
+	if _, err := e.SetInterface(i); err != nil {
+		// need to clean that --> some code path are dissimilar
+		// for example setting a fr.Element from an fp.Element
+		// fails with the above but succeeds through big int... (2-chains)
+		b := utils.FromInterface(i)
+		e.SetBigInt(&b)
+	}
+	var r constraint.Element
+	copy(r[:], e[:])
+	return r
+}
+func (engine *arithEngine) ToBigInt(c constraint.Element) *big.Int {
+	e := (*fr.Element)(c[:])
+	r := new(big.Int)
+	e.BigInt(r)
+	return r
+
+}
+func (engine *arithEngine) Mul(a, b constraint.Element) constraint.Element {
+	_a := (*fr.Element)(a[:])
+	_b := (*fr.Element)(b[:])
+	_a.Mul(_a, _b)
+	return a
+}
+
+func (engine *arithEngine) Add(a, b constraint.Element) constraint.Element {
+	_a := (*fr.Element)(a[:])
+	_b := (*fr.Element)(b[:])
+	_a.Add(_a, _b)
+	return a
+}
+func (engine *arithEngine) Sub(a, b constraint.Element) constraint.Element {
+	_a := (*fr.Element)(a[:])
+	_b := (*fr.Element)(b[:])
+	_a.Sub(_a, _b)
+	return a
+}
+func (engine *arithEngine) Neg(a constraint.Element) constraint.Element {
+	e := (*fr.Element)(a[:])
+	e.Neg(e)
+	return a
+
+}
+func (engine *arithEngine) Inverse(a constraint.Element) constraint.Element {
+	e := (*fr.Element)(a[:])
+	e.Inverse(e)
+	return a
+}
+
+func (engine *arithEngine) IsOne(a constraint.Element) bool {
+	e := (*fr.Element)(a[:])
+	return e.IsOne()
+}
+
+func (engine *arithEngine) One() constraint.Element {
+	e := fr.One()
+	var r constraint.Element
+	copy(r[:], e[:])
+	return r
+}
+
+func (engine *arithEngine) String(a constraint.Element) string {
+	e := (*fr.Element)(a[:])
+	return e.String()
 }

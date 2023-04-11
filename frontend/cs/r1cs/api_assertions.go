@@ -32,7 +32,7 @@ func (builder *builder) AssertIsEqual(i1, i2 frontend.Variable) {
 	r := builder.getLinearExpression(builder.toVariable(i1))
 	o := builder.getLinearExpression(builder.toVariable(i2))
 
-	cID := builder.cs.AddConstraint(builder.newR1C(builder.cstOne(), r, o), builder.genericGate)
+	cID := builder.cs.AddR1C(builder.newR1C(builder.cstOne(), r, o), builder.genericGate)
 
 	if debug.Debug {
 		debug := builder.newDebugInfo("assertIsEqual", r, " == ", o)
@@ -74,7 +74,7 @@ func (builder *builder) AssertIsBoolean(i1 frontend.Variable) {
 
 	V := builder.getLinearExpression(v)
 
-	cID := builder.cs.AddConstraint(builder.newR1C(V, _v, o), builder.genericGate)
+	cID := builder.cs.AddR1C(builder.newR1C(V, _v, o), builder.genericGate)
 	if debug.Debug {
 		debug := builder.newDebugInfo("assertIsBoolean", V, " == (0|1)")
 		builder.cs.AttachDebugInfo(debug, []int{cID})
@@ -155,9 +155,9 @@ func (builder *builder) mustBeLessOrEqVar(a, bound frontend.Variable) {
 		if aConst {
 			// aBits[i] is a constant;
 			l = builder.Mul(l, aBits[i])
-			added = append(added, builder.cs.AddConstraint(builder.newR1C(l, zero, zero), builder.genericGate))
+			added = append(added, builder.cs.AddR1C(builder.newR1C(l, zero, zero), builder.genericGate))
 		} else {
-			added = append(added, builder.cs.AddConstraint(builder.newR1C(l, aBits[i], zero), builder.genericGate))
+			added = append(added, builder.cs.AddR1C(builder.newR1C(l, aBits[i], zero), builder.genericGate))
 		}
 	}
 
@@ -214,7 +214,7 @@ func (builder *builder) mustBeLessOrEqCst(a expr.LinearExpression, bound *big.In
 			l := builder.Sub(1, p[i+1])
 			l = builder.Sub(l, aBits[i])
 
-			added = append(added, builder.cs.AddConstraint(builder.newR1C(l, aBits[i], builder.cstZero()), builder.genericGate))
+			added = append(added, builder.cs.AddR1C(builder.newR1C(l, aBits[i], builder.cstZero()), builder.genericGate))
 		} else {
 			builder.AssertIsBoolean(aBits[i])
 		}

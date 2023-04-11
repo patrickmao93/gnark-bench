@@ -435,8 +435,8 @@ func (cs *R1CS) solveConstraint(cID uint32, r *constraint.R1C, solution *solutio
 	return nil
 }
 
-// GetConstraints return the list of R1C and a coefficient resolver
-func (cs *R1CS) GetConstraints() ([]constraint.R1C, constraint.Resolver) {
+// GetR1Cs return the list of R1C and a coefficient resolver
+func (cs *R1CS) GetR1Cs() []constraint.R1C {
 	toReturn := make([]constraint.R1C, 0, cs.GetNbConstraints())
 	
 	for _, inst := range cs.Instructions {
@@ -449,7 +449,7 @@ func (cs *R1CS) GetConstraints() ([]constraint.R1C, constraint.Resolver) {
 			panic("not implemented")
 		}
 	}
-	return toReturn, cs
+	return toReturn
 }
 
 // GetNbCoefficients return the number of unique coefficients needed in the R1CS

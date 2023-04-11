@@ -127,9 +127,8 @@ func (cs *R1CS) solveSparseR1C(c *constraint.SparseR1C, solution *solution) erro
 	return nil
 }
 
-// GetConstraints return the list of SparseR1C and a coefficient resolver
-// TODO @gbotrel
-func (cs *R1CS) GetConstraints2() ([]constraint.SparseR1C, constraint.Resolver) {
+// GetConstraints return the list of SparseR1C
+func (cs *R1CS) GetSparseR1Cs() []constraint.SparseR1C {
 
 	toReturn := make([]constraint.SparseR1C, 0, cs.GetNbConstraints())
 
@@ -144,7 +143,7 @@ func (cs *R1CS) GetConstraints2() ([]constraint.SparseR1C, constraint.Resolver) 
 			panic("not implemented")
 		}
 	}
-	return toReturn, cs
+	return toReturn
 }
 
 func (cs *R1CS) GetCoefficient(i int) (r constraint.Element) {

@@ -446,7 +446,7 @@ func (builder *builder) compress(le expr.LinearExpression) expr.LinearExpression
 
 	one := builder.cstOne()
 	t := builder.newInternalVariable()
-	builder.cs.AddConstraint(builder.newR1C(le, one, t), builder.genericGate)
+	builder.cs.AddR1C(builder.newR1C(le, one, t), builder.genericGate)
 	return t
 }
 

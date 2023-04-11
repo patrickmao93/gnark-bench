@@ -18,8 +18,6 @@ package cs
 
 import (
 	"github.com/consensys/gnark/constraint"
-	"github.com/consensys/gnark/internal/utils"
-	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 )
@@ -80,91 +78,4 @@ func (ct *CoeffTable) MakeTerm(coeff *constraint.Element, variableID int) constr
 // CoeffToString implements constraint.Resolver
 func (ct *CoeffTable) CoeffToString(cID int) string {
 	return ct.Coefficients[cID].String()
-}
-
-var _ constraint.Field = &arithEngine{}
-
-var (
-	two      fr.Element
-	minusOne fr.Element
-	minusTwo fr.Element
-)
-
-func init() {
-	minusOne.SetOne()
-	minusOne.Neg(&minusOne)
-	two.SetOne()
-	two.Double(&two)
-	minusTwo.Neg(&two)
-}
-
-// implements constraint.Field
-type arithEngine struct{}
-
-func (engine *arithEngine) FromInterface(i interface{}) constraint.Element {
-	var e fr.Element
-	if _, err := e.SetInterface(i); err != nil {
-		// need to clean that --> some code path are dissimilar
-		// for example setting a fr.Element from an fp.Element
-		// fails with the above but succeeds through big int... (2-chains)
-		b := utils.FromInterface(i)
-		e.SetBigInt(&b)
-	}
-	var r constraint.Element
-	copy(r[:], e[:])
-	return r
-}
-func (engine *arithEngine) ToBigInt(c constraint.Element) *big.Int {
-	e := (*fr.Element)(c[:])
-	r := new(big.Int)
-	e.BigInt(r)
-	return r
-
-}
-func (engine *arithEngine) Mul(a, b constraint.Element) constraint.Element {
-	_a := (*fr.Element)(a[:])
-	_b := (*fr.Element)(b[:])
-	_a.Mul(_a, _b)
-	return a
-}
-
-func (engine *arithEngine) Add(a, b constraint.Element) constraint.Element {
-	_a := (*fr.Element)(a[:])
-	_b := (*fr.Element)(b[:])
-	_a.Add(_a, _b)
-	return a
-}
-func (engine *arithEngine) Sub(a, b constraint.Element) constraint.Element {
-	_a := (*fr.Element)(a[:])
-	_b := (*fr.Element)(b[:])
-	_a.Sub(_a, _b)
-	return a
-}
-func (engine *arithEngine) Neg(a constraint.Element) constraint.Element {
-	e := (*fr.Element)(a[:])
-	e.Neg(e)
-	return a
-
-}
-func (engine *arithEngine) Inverse(a constraint.Element) constraint.Element {
-	e := (*fr.Element)(a[:])
-	e.Inverse(e)
-	return a
-}
-
-func (engine *arithEngine) IsOne(a constraint.Element) bool {
-	e := (*fr.Element)(a[:])
-	return e.IsOne()
-}
-
-func (engine *arithEngine) One() constraint.Element {
-	e := fr.One()
-	var r constraint.Element
-	copy(r[:], e[:])
-	return r
-}
-
-func (engine *arithEngine) String(a constraint.Element) string {
-	e := (*fr.Element)(a[:])
-	return e.String()
 }

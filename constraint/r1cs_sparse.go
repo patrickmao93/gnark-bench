@@ -17,108 +17,92 @@ package constraint
 type SparseR1CS interface {
 	ConstraintSystem
 
-	// TODO @gbotrel temporary for refactor
+	// AddSparseR1C adds a constraint to the constraint system.
 	AddSparseR1C(c SparseR1C, bID BlueprintID) int
 
-	// GetConstraints2 return the list of SparseR1C and a helper for pretty printing.
+	// GetSparseR1Cs return the list of SparseR1C
 	// See StringBuilder for more info.
 	// ! this is an experimental API.
-	GetConstraints2() ([]SparseR1C, Resolver)
+	GetSparseR1Cs() []SparseR1C
 }
 
-// R1CS describes a set of SparseR1C constraint
-// TODO @gbotrel maybe SparseR1CSCore and R1CSCore should go in code generation directly to avoid confusing this package.
-type SparseR1CSCore struct {
-	System
-	Constraints []SparseR1C
-}
+// func (system *SparseR1CSCore) CheckUnconstrainedWires() error {
+// 	// TODO @gbotrel add unit test for that.
+// 	return nil
+// inputConstrained := make([]bool, system.GetNbSecretVariables()+system.GetNbPublicVariables())
+// cptInputs := len(inputConstrained)
+// if cptInputs == 0 {
+// 	return errors.New("invalid constraint system: no input defined")
+// }
 
-// GetNbConstraints returns the number of constraints
-func (cs *SparseR1CSCore) GetNbConstraints() int {
-	return len(cs.Constraints)
-}
+// cptHints := len(system.MHints)
+// mHintsConstrained := make(map[int]bool)
 
-func (cs *SparseR1CSCore) UpdateLevel(cID int, c Iterable) {
-	cs.updateLevel(cID, c)
-}
+// // for each constraint, we check the terms and mark our inputs / hints as constrained
+// processTerm := func(t Term) {
 
-func (system *SparseR1CSCore) CheckUnconstrainedWires() error {
-	// TODO @gbotrel add unit test for that.
-	return nil
-	// inputConstrained := make([]bool, system.GetNbSecretVariables()+system.GetNbPublicVariables())
-	// cptInputs := len(inputConstrained)
-	// if cptInputs == 0 {
-	// 	return errors.New("invalid constraint system: no input defined")
-	// }
+// 	// L and M[0] handles the same wire but with a different coeff
+// 	vID := t.WireID()
+// 	if t.CoeffID() != CoeffIdZero {
+// 		if vID < len(inputConstrained) {
+// 			if !inputConstrained[vID] {
+// 				inputConstrained[vID] = true
+// 				cptInputs--
+// 			}
+// 		} else {
+// 			// internal variable, let's check if it's a hint
+// 			if _, ok := system.MHints[vID]; ok {
+// 				vID -= (system.GetNbPublicVariables() + system.GetNbSecretVariables())
+// 				if !mHintsConstrained[vID] {
+// 					mHintsConstrained[vID] = true
+// 					cptHints--
+// 				}
+// 			}
+// 		}
+// 	}
 
-	// cptHints := len(system.MHints)
-	// mHintsConstrained := make(map[int]bool)
+// }
+// for _, c := range system.Constraints {
+// 	processTerm(c.L)
+// 	processTerm(c.R)
+// 	processTerm(c.M[0])
+// 	processTerm(c.M[1])
+// 	processTerm(c.O)
+// 	if cptHints|cptInputs == 0 {
+// 		return nil // we can stop.
+// 	}
 
-	// // for each constraint, we check the terms and mark our inputs / hints as constrained
-	// processTerm := func(t Term) {
+// }
 
-	// 	// L and M[0] handles the same wire but with a different coeff
-	// 	vID := t.WireID()
-	// 	if t.CoeffID() != CoeffIdZero {
-	// 		if vID < len(inputConstrained) {
-	// 			if !inputConstrained[vID] {
-	// 				inputConstrained[vID] = true
-	// 				cptInputs--
-	// 			}
-	// 		} else {
-	// 			// internal variable, let's check if it's a hint
-	// 			if _, ok := system.MHints[vID]; ok {
-	// 				vID -= (system.GetNbPublicVariables() + system.GetNbSecretVariables())
-	// 				if !mHintsConstrained[vID] {
-	// 					mHintsConstrained[vID] = true
-	// 					cptHints--
-	// 				}
-	// 			}
-	// 		}
-	// 	}
+// // something is a miss, we build the error string
+// var sbb strings.Builder
+// if cptInputs != 0 {
+// 	sbb.WriteString(strconv.Itoa(cptInputs))
+// 	sbb.WriteString(" unconstrained input(s):")
+// 	sbb.WriteByte('\n')
+// 	for i := 0; i < len(inputConstrained) && cptInputs != 0; i++ {
+// 		if !inputConstrained[i] {
+// 			if i < len(system.Public) {
+// 				sbb.WriteString(system.Public[i])
+// 			} else {
+// 				sbb.WriteString(system.Secret[i-len(system.Public)])
+// 			}
+// 			sbb.WriteByte('\n')
+// 			cptInputs--
+// 		}
+// 	}
+// 	sbb.WriteByte('\n')
+// }
 
-	// }
-	// for _, c := range system.Constraints {
-	// 	processTerm(c.L)
-	// 	processTerm(c.R)
-	// 	processTerm(c.M[0])
-	// 	processTerm(c.M[1])
-	// 	processTerm(c.O)
-	// 	if cptHints|cptInputs == 0 {
-	// 		return nil // we can stop.
-	// 	}
-
-	// }
-
-	// // something is a miss, we build the error string
-	// var sbb strings.Builder
-	// if cptInputs != 0 {
-	// 	sbb.WriteString(strconv.Itoa(cptInputs))
-	// 	sbb.WriteString(" unconstrained input(s):")
-	// 	sbb.WriteByte('\n')
-	// 	for i := 0; i < len(inputConstrained) && cptInputs != 0; i++ {
-	// 		if !inputConstrained[i] {
-	// 			if i < len(system.Public) {
-	// 				sbb.WriteString(system.Public[i])
-	// 			} else {
-	// 				sbb.WriteString(system.Secret[i-len(system.Public)])
-	// 			}
-	// 			sbb.WriteByte('\n')
-	// 			cptInputs--
-	// 		}
-	// 	}
-	// 	sbb.WriteByte('\n')
-	// }
-
-	// if cptHints != 0 {
-	// 	sbb.WriteString(strconv.Itoa(cptHints))
-	// 	sbb.WriteString(" unconstrained hints")
-	// 	sbb.WriteByte('\n')
-	// 	// TODO we may add more debug info here → idea, in NewHint, take the debug stack, and store in the hint map some
-	// 	// debugInfo to find where a hint was declared (and not constrained)
-	// }
-	// return errors.New(sbb.String())
-}
+// if cptHints != 0 {
+// 	sbb.WriteString(strconv.Itoa(cptHints))
+// 	sbb.WriteString(" unconstrained hints")
+// 	sbb.WriteByte('\n')
+// 	// TODO we may add more debug info here → idea, in NewHint, take the debug stack, and store in the hint map some
+// 	// debugInfo to find where a hint was declared (and not constrained)
+// }
+// return errors.New(sbb.String())
+// }
 
 type CommitmentConstraint uint32
 
