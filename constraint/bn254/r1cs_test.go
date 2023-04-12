@@ -131,7 +131,7 @@ func TestSerialization(t *testing.T) {
 	}
 }
 
-const n = 1000000
+const n = 10000
 
 type circuit struct {
 	X frontend.Variable
@@ -164,11 +164,6 @@ func BenchmarkSolve(b *testing.B) {
 		}
 		b.Log("scs nbConstraints", ccs.GetNbConstraints())
 
-		var buf bytes.Buffer
-		ccs.WriteTo(&buf)
-		b.Log("scs size", buf.Len())
-
-
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = ccs.IsSolved(witness)
@@ -182,9 +177,6 @@ func BenchmarkSolve(b *testing.B) {
 			b.Fatal(err)
 		}
 		b.Log("r1cs nbConstraints", ccs.GetNbConstraints())
-		var buf bytes.Buffer
-		ccs.WriteTo(&buf)
-		b.Log("r1cs size", buf.Len())
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
