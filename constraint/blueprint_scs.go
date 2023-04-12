@@ -3,7 +3,7 @@ package constraint
 type BlueprintGenericSparseR1C struct{}
 
 func (b *BlueprintGenericSparseR1C) NbInputs() int {
-	return 10 // xa, xb, qL, qR
+	return 9 // xa, xb, qL, qR
 }
 func (b *BlueprintGenericSparseR1C) NbConstraints() int {
 	return 1
@@ -26,8 +26,7 @@ func (b *BlueprintGenericSparseR1C) CompressSparseR1C(c *SparseR1C) []uint32 {
 
 func (b *BlueprintGenericSparseR1C) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
 	c.Clear()
-	// TODO @gbotrel use unsafe ptr;
-	// calldata := cs.CallData[instruction.StartCallData : instruction.StartCallData+uint32(b.NbInputs())]
+
 	c.XA = calldata[0]
 	c.XB = calldata[1]
 	c.XC = calldata[2]
@@ -76,4 +75,47 @@ func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uin
 	c.XC = calldata[2]
 	c.QO = CoeffIdMinusOne
 	c.QM = calldata[3]
+}
+
+type BlueprintSparseR1CAdd struct{}
+
+func (b *BlueprintSparseR1CAdd) NbInputs() int {
+	return 6
+}
+func (b *BlueprintSparseR1CAdd) NbConstraints() int {
+	return 1
+}
+
+func (b *BlueprintSparseR1CAdd) CompressSparseR1C(c *SparseR1C) []uint32 {
+	return []uint32{
+		c.XA,
+		c.XB,
+		c.XC,
+		c.QL,
+		c.QR,
+		c.QC,
+	}
+}
+
+func (blueprint *BlueprintSparseR1CAdd) Solve(s Solver, calldata []uint32) {
+	// a + b + k == c
+	a := s.GetValue(calldata[3], calldata[0])
+	b := s.GetValue(calldata[4], calldata[1])
+	k := s.GetCoeff(calldata[5])
+
+	a = s.Add(a, b)
+	a = s.Add(a, k)
+
+	s.SetValue(calldata[2], a)
+}
+
+func (b *BlueprintSparseR1CAdd) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
+	c.Clear()
+	c.XA = calldata[0]
+	c.XB = calldata[1]
+	c.XC = calldata[2]
+	c.QL = calldata[3]
+	c.QR = calldata[4]
+	c.QO = CoeffIdMinusOne
+	c.QC = calldata[5]
 }

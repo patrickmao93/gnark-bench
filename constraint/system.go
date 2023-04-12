@@ -32,6 +32,7 @@ type ConstraintSystem interface {
 	GetNbSecretVariables() int
 	GetNbPublicVariables() int
 
+	GetNbInstructions() int
 	GetNbConstraints() int
 	GetNbCoefficients() int
 
@@ -71,6 +72,14 @@ type ConstraintSystem interface {
 
 	// AddBlueprint registers the given blueprint and returns its id. This should be called only once per blueprint.
 	AddBlueprint(b Blueprint) BlueprintID
+
+	GetInstruction(int) Instruction
+
+	GetCoefficient(i int) Element
+
+	// GetCallData re-slice the constraint system full calldata slice with the portion
+	// related to the instruction. This does not copy and caller should not modify.
+	GetCallData(instruction Instruction) []uint32
 }
 
 type Iterable interface {

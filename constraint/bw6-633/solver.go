@@ -51,6 +51,7 @@ type solver struct {
 	logger zerolog.Logger
 
 	a, b, c fr.Vector // R1CS solver will compute the a,b,c matrices
+
 }
 
 func newSolver(cs *system, witness fr.Vector, opts ...csolver.Option) (*solver, error) {
@@ -334,23 +335,9 @@ func (s *solver) SetValue(vID uint32, f constraint.Element) {
 	s.set(int(vID), fr.Element(f[:]))
 }
 
-// UnsatisfiedConstraintError wraps an error with useful metadata on the unsatisfied constraint
-type UnsatisfiedConstraintError struct {
-	Err       error
-	CID       int     // constraint ID
-	DebugInfo *string // optional debug info
-}
-
-func (r *UnsatisfiedConstraintError) Error() string {
-	if r.DebugInfo != nil {
-		return fmt.Sprintf("constraint #%d is not satisfied: %s", r.CID, *r.DebugInfo)
-	}
-	return fmt.Sprintf("constraint #%d is not satisfied: %s", r.CID, r.Err.Error())
-}
-
 // processInstruction decodes the instruction and execute blueprint-defined logic.
 // an instruction can encode a hint, a custom constraint or a generic constraint.
-func (solver *solver) processInstruction(inst constraint.Instruction) error {
+func (solver *solver) processInstruction(inst constraint.Instruction, scratch *scratch) error {
 	// fetch the blueprint
 	blueprint := solver.Blueprints[inst.BlueprintID]
 	calldata := solver.GetCallData(inst)
@@ -376,20 +363,18 @@ func (solver *solver) processInstruction(inst constraint.Instruction) error {
 			// TODO @gbotrel we use the solveR1C method for now, having user-defined
 			// blueprint for R1CS would require constraint.Solver interface to add methods
 			// to set a,b,c since it's more efficient to compute these while we solve.
-			var tmpR1C constraint.R1C
-			bc.DecompressR1C(&tmpR1C, calldata)
-			return solver.solveR1C(cID, &tmpR1C)
+			bc.DecompressR1C(&scratch.tR1C, calldata)
+			return solver.solveR1C(cID, &scratch.tR1C)
 		}
 	} else if solver.Type == constraint.SystemSparseR1CS {
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			// sparse R1CS
-			var tmpSparseR1C constraint.SparseR1C
-			bc.DecompressSparseR1C(&tmpSparseR1C, calldata)
+			bc.DecompressSparseR1C(&scratch.tSparseR1C, calldata)
 
-			if err := solver.solveSparseR1C(&tmpSparseR1C); err != nil {
+			if err := solver.solveSparseR1C(&scratch.tSparseR1C); err != nil {
 				return solver.wrapErrWithDebugInfo(cID, err)
 			}
-			if err := solver.checkSparseR1C(&tmpSparseR1C); err != nil {
+			if err := solver.checkSparseR1C(&scratch.tSparseR1C); err != nil {
 				return solver.wrapErrWithDebugInfo(cID, err)
 			}
 			return nil
@@ -423,9 +408,10 @@ func (solver *solver) run() error {
 	// a task is a slice of constraint indexes to be solved
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go func() {
+			var scratch scratch
 			for t := range chTasks {
 				for _, i := range t {
-					if err := solver.processInstruction(solver.Instructions[i]); err != nil {
+					if err := solver.processInstruction(solver.Instructions[i], &scratch); err != nil {
 						chError <- err
 						wg.Done()
 						return
@@ -442,6 +428,8 @@ func (solver *solver) run() error {
 		close(chError)
 	}()
 
+	var scratch scratch
+
 	// for each level, we push the tasks
 	for _, level := range solver.Levels {
 
@@ -451,7 +439,7 @@ func (solver *solver) run() error {
 		if maxCPU <= 1.0 {
 			// we do it sequentially
 			for _, i := range level {
-				if err := solver.processInstruction(solver.Instructions[i]); err != nil {
+				if err := solver.processInstruction(solver.Instructions[i], &scratch); err != nil {
 					return err
 				}
 			}
@@ -504,15 +492,6 @@ func (solver *solver) run() error {
 	}
 
 	return nil
-}
-
-func (solver *solver) wrapErrWithDebugInfo(cID uint32, err error) *UnsatisfiedConstraintError {
-	var debugInfo *string
-	if dID, ok := solver.MDebug[int(cID)]; ok {
-		debugInfo = new(string)
-		*debugInfo = solver.logValue(solver.DebugInfo[dID])
-	}
-	return &UnsatisfiedConstraintError{CID: int(cID), Err: err, DebugInfo: debugInfo}
 }
 
 // solveR1C compute unsolved wires in the constraint, if any and set the solver accordingly
@@ -734,4 +713,34 @@ func (solver *solver) solveSparseR1C(c *constraint.SparseR1C) error {
 
 	solver.set(int(vID), o)
 	return nil
+}
+
+// UnsatisfiedConstraintError wraps an error with useful metadata on the unsatisfied constraint
+type UnsatisfiedConstraintError struct {
+	Err       error
+	CID       int     // constraint ID
+	DebugInfo *string // optional debug info
+}
+
+func (r *UnsatisfiedConstraintError) Error() string {
+	if r.DebugInfo != nil {
+		return fmt.Sprintf("constraint #%d is not satisfied: %s", r.CID, *r.DebugInfo)
+	}
+	return fmt.Sprintf("constraint #%d is not satisfied: %s", r.CID, r.Err.Error())
+}
+
+func (solver *solver) wrapErrWithDebugInfo(cID uint32, err error) *UnsatisfiedConstraintError {
+	var debugInfo *string
+	if dID, ok := solver.MDebug[int(cID)]; ok {
+		debugInfo = new(string)
+		*debugInfo = solver.logValue(solver.DebugInfo[dID])
+	}
+	return &UnsatisfiedConstraintError{CID: int(cID), Err: err, DebugInfo: debugInfo}
+}
+
+// temporary variables to avoid memallocs in hotloop
+type scratch struct {
+	tR1C         constraint.R1C
+	tSparseR1C   constraint.SparseR1C
+	tHintMapping constraint.HintMapping
 }

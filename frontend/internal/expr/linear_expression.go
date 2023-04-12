@@ -33,6 +33,8 @@ type Term struct {
 func (t *Term) SetCoeff(c constraint.Element) {
 	t.Coeff = c
 }
+
+// TODO @gbotrel make that return a uint32
 func (t Term) WireID() int {
 	return t.VID
 }

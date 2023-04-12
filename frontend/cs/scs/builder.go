@@ -62,24 +62,24 @@ type builder struct {
 
 	// same thing for addition gates
 	// see addConstraintExist(...)
-	mAddConstraints map[uint64]int
+	mAddInstructions map[uint64]int
 
 	// frequently used coefficients
 	tOne, tMinusOne constraint.Element
 
-	genericGate constraint.BlueprintID
-	mulGate     constraint.BlueprintID
+	genericGate      constraint.BlueprintID
+	mulGate, addGate constraint.BlueprintID
 }
 
 // initialCapacity has quite some impact on frontend performance, especially on large circuits size
 // we may want to add build tags to tune that
 func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 	b := builder{
-		mtBooleans:      make(map[expr.Term]struct{}),
-		mMulConstraints: make(map[uint64]int, config.Capacity/2),
-		mAddConstraints: make(map[uint64]int, config.Capacity/2),
-		config:          config,
-		Store:           kvstore.New(),
+		mtBooleans:       make(map[expr.Term]struct{}),
+		mMulConstraints:  make(map[uint64]int, config.Capacity/2),
+		mAddInstructions: make(map[uint64]int, config.Capacity/2),
+		config:           config,
+		Store:            kvstore.New(),
 	}
 
 	curve := utils.FieldToCurve(field)
@@ -112,6 +112,7 @@ func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 
 	b.genericGate = b.cs.AddBlueprint(&constraint.BlueprintGenericSparseR1C{})
 	b.mulGate = b.cs.AddBlueprint(&constraint.BlueprintSparseR1CMul{})
+	b.addGate = b.cs.AddBlueprint(&constraint.BlueprintSparseR1CAdd{})
 
 	return &b
 }
@@ -151,6 +152,23 @@ func (builder *builder) addMulGate(a, b, c expr.Term) {
 		QM: QM,
 		QO: QO,
 	}, builder.mulGate)
+}
+
+// a + b + k == c
+func (builder *builder) addAddGate(a, b expr.Term, xc uint32, k constraint.Element) {
+	qL := builder.cs.AddCoeff(a.Coeff)
+	qR := builder.cs.AddCoeff(b.Coeff)
+	qC := builder.cs.AddCoeff(k)
+
+	builder.cs.AddSparseR1C(constraint.SparseR1C{
+		XA: uint32(a.VID),
+		XB: uint32(b.VID),
+		XC: xc,
+		QL: qL,
+		QR: qR,
+		QC: qC,
+		QO: constraint.CoeffIdMinusOne,
+	}, builder.addGate)
 }
 
 func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {
@@ -380,17 +398,11 @@ func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *cons
 	if len(r) == 0 {
 		if k != nil {
 			// we need to return acc + k
-			// o, found := builder.addConstraintExist(acc, expr.Term{}, *k)
-			// if !found {
-			o := builder.newInternalVariable()
-			builder.addPlonkConstraint(sparseR1C{
-				xa: acc.VID,
-				xc: o.VID,
-				qL: acc.Coeff,
-				qO: builder.tMinusOne,
-				qC: *k,
-			})
-			// }
+			o, found := builder.addConstraintExist(acc, expr.Term{}, *k)
+			if !found {
+				o = builder.newInternalVariable()
+				builder.addAddGate(acc, expr.Term{}, uint32(o.VID), *k)
+			}
 
 			return o
 		}
@@ -402,20 +414,11 @@ func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *cons
 	if k != nil {
 		qC = *k
 	}
-	// o, found := builder.addConstraintExist(acc, r[0], qC)
-	// if !found {
-	o := builder.newInternalVariable()
-
-	builder.addPlonkConstraint(sparseR1C{
-		xa: acc.VID,
-		xb: r[0].VID,
-		xc: o.VID,
-		qL: acc.Coeff,
-		qR: r[0].Coeff,
-		qO: builder.tMinusOne,
-		qC: qC,
-	})
-	// }
+	o, found := builder.addConstraintExist(acc, r[0], qC)
+	if !found {
+		o = builder.newInternalVariable()
+		builder.addAddGate(acc, r[0], uint32(o.VID), qC)
+	}
 
 	return builder.splitSum(o, r[1:], nil)
 }
@@ -438,86 +441,72 @@ func (builder *builder) splitSum(acc expr.Term, r expr.LinearExpression, k *cons
 // not going to catch these duplicates.
 // 2. this piece of code assumes some behavior from constraint/ package (like coeffIDs, or append-style
 // constraint management)
-// func (builder *builder) addConstraintExist(a, b expr.Term, k constraint.Coeff) (expr.Term, bool) {
-// 	// ensure deterministic combined identifier;
-// 	if a.VID < b.VID {
-// 		a, b = b, a
-// 	}
-// 	h := uint64(a.WireID()) | uint64(b.WireID()<<32)
+func (builder *builder) addConstraintExist(a, b expr.Term, k constraint.Element) (expr.Term, bool) {
+	// ensure deterministic combined identifier;
+	if a.VID < b.VID {
+		a, b = b, a
+	}
+	h := uint64(a.WireID()) | uint64(b.WireID()<<32)
 
-// 	if cID, ok := builder.mAddConstraints[h]; ok {
-// 		// seems likely we have a fit, let's double check
-// 		if c := builder.cs.GetConstraint(cID); c != nil {
-// 			if c.M[0].CoeffID() != constraint.CoeffIdZero {
-// 				panic("sanity check failed; recorded a add constraint with qM set")
-// 			}
+	if iID, ok := builder.mAddInstructions[h]; ok {
+		// if we do custom gates with slices in the constraint
+		// should use a shared object here to avoid allocs.
+		var c constraint.SparseR1C
 
-// 			if a.WireID() == c.R.WireID() {
-// 				a, b = b, a // ensure a is in qL
-// 			}
-// 			if (a.WireID() != c.L.WireID()) || (b.WireID() != c.R.WireID()) {
-// 				// that shouldn't happen; it means we added an entry in the duplicate add constraint
-// 				// map with a key that don't match the entries.
-// 				log := logger.Logger()
-// 				log.Error().Msg("mAddConstraints entry doesn't match key")
-// 				return expr.Term{}, false
-// 			}
+		// seems likely we have a fit, let's double check
+		inst := builder.cs.GetInstruction(iID)
+		// we know the blueprint we added it.
+		blueprint := constraint.BlueprintSparseR1CAdd{}
+		blueprint.DecompressSparseR1C(&c, builder.cs.GetCallData(inst))
 
-// 			// qO == -1
-// 			if c.O.CoeffID() != constraint.CoeffIdMinusOne {
-// 				// we could probably handle that case, but it shouldn't
-// 				// happen with our current APIs --> each time we record a add gate in the duplicate
-// 				// map qO == -1
-// 				return expr.Term{}, false
-// 			}
+		// qO == -1
 
-// 			tk := builder.cs.MakeTerm(&k, 0)
-// 			if tk.CoeffID() != c.K {
-// 				// the constant part of the addition differs, no point going forward
-// 				// since we will need to add a new constraint anyway.
-// 				return expr.Term{}, false
-// 			}
+		tk := builder.cs.MakeTerm(&k, 0)
+		if tk.CoeffID() != int(c.QC) {
+			// the constant part of the addition differs, no point going forward
+			// since we will need to add a new constraint anyway.
+			return expr.Term{}, false
+		}
 
-// 			// check that the coeff matches
-// 			qL := a.Coeff
-// 			qR := b.Coeff
-// 			ta := builder.cs.MakeTerm(&qL, 0)
-// 			tb := builder.cs.MakeTerm(&qR, 0)
-// 			if c.L.CoeffID() != ta.CoeffID() || c.R.CoeffID() != tb.CoeffID() {
-// 				if !k.IsZero() {
-// 					// may be for some edge cases we could avoid adding a constraint here.
-// 					return expr.Term{}, false
-// 				}
-// 				// we recorded an addition in the form q1*a + q2*b == c
-// 				// we want to record a new one in the form q3*a + q4*b == n*c
-// 				// question is; can we re-use c to avoid introducing a new wire & new constraint
-// 				// this is possible only if n == q3/q1 == q4/q2, that is, q3q2 == q1q4
-// 				q1 := builder.cs.GetCoefficient(c.L.CoeffID())
-// 				q2 := builder.cs.GetCoefficient(c.R.CoeffID())
-// 				q3 := qL
-// 				q4 := qR
-// 				builder.cs.Mul(&q3, &q2)
-// 				builder.cs.Mul(&q1, &q4)
-// 				if q1 == q3 {
-// 					// no need to introduce a new constraint;
-// 					// compute n, the coefficient for the output wire
-// 					builder.cs.Inverse(&q2)
-// 					builder.cs.Mul(&q2, &q4)
-// 					return expr.NewTerm(c.O.WireID(), q2), true
-// 				}
-// 				// we will need an additional constraint
-// 				return expr.Term{}, false
-// 			}
+		// check that the coeff matches
+		qL := a.Coeff
+		qR := b.Coeff
+		ta := builder.cs.MakeTerm(&qL, 0)
+		tb := builder.cs.MakeTerm(&qR, 0)
+		if int(c.QL) != ta.CoeffID() || int(c.QR) != tb.CoeffID() {
+			if !k.IsZero() {
+				// may be for some edge cases we could avoid adding a constraint here.
+				return expr.Term{}, false
+			}
+			// we recorded an addition in the form q1*a + q2*b == c
+			// we want to record a new one in the form q3*a + q4*b == n*c
+			// question is; can we re-use c to avoid introducing a new wire & new constraint
+			// this is possible only if n == q3/q1 == q4/q2, that is, q3q2 == q1q4
+			q1 := builder.cs.GetCoefficient(int(c.QL))
+			q2 := builder.cs.GetCoefficient(int(c.QR))
+			q3 := qL
+			q4 := qR
+			q3 = builder.cs.Mul(q3, q2)
+			q1 = builder.cs.Mul(q1, q4)
+			if q1 == q3 {
+				// no need to introduce a new constraint;
+				// compute n, the coefficient for the output wire
+				q2 = builder.cs.Inverse(q2)
+				q2 = builder.cs.Mul(q2, q4)
+				return expr.NewTerm(int(c.XC), q2), true
+			}
+			// we will need an additional constraint
+			return expr.Term{}, false
+		}
 
-// 			// we found the same constraint!
-// 			return expr.NewTerm(c.O.WireID(), builder.tOne), true
-// 		}
-// 	}
-// 	// we are going to add this constraint, so we mark it.
-// 	// ! assumes the caller add a constraint immediately  after the call to this function
-// 	builder.mAddConstraints[h] = builder.cs.GetNbConstraints()
-// 	return expr.Term{}, false
-// }
+		// we found the same constraint!
+		return expr.NewTerm(int(c.XC), builder.tOne), true
+	}
+	// we are going to add this constraint, so we mark it.
+	// ! assumes the caller add an instruction immediately  after the call to this function
+	builder.mAddInstructions[h] = builder.cs.GetNbInstructions()
+	return expr.Term{}, false
+}
 
 // mulConstraintExist check if we recorded a constraint in the form
 // qM*xa*xb - xc == 0

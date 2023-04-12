@@ -141,6 +141,14 @@ func NewSystem(scalarField *big.Int, capacity int, t SystemType) System {
 // 	}
 // }
 
+func (system *System) GetNbInstructions() int {
+	return len(system.Instructions)
+}
+
+func (system *System) GetInstruction(id int) Instruction {
+	return system.Instructions[id]
+}
+
 func (system *System) AddBlueprint(b Blueprint) BlueprintID {
 	system.Blueprints = append(system.Blueprints, b)
 	return BlueprintID(len(system.Blueprints) - 1)
