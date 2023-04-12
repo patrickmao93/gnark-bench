@@ -15,7 +15,8 @@ type Blueprint interface {
 
 // BlueprintSolvable represents a blueprint that knows how to solve itself.
 type BlueprintSolvable interface {
-	Solve(s Solver, calldata []uint32)
+	// Solve may return an error if the decoded constraint / calldata is unsolvable.
+	Solve(s Solver, calldata []uint32) error
 }
 
 // BlueprintR1C indicates that the blueprint and associated calldata encodes a R1C

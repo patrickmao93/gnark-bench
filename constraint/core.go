@@ -14,6 +14,14 @@ import (
 	"github.com/consensys/gnark/logger"
 )
 
+type SystemType uint16
+
+const (
+	SystemUnknown SystemType = iota
+	SystemR1CS
+	SystemSparseR1CS
+)
+
 // Instruction is the lowest element of a constraint system. It stores just enough data to
 // reconstruct a constraint of any shape or a hint at solving time.
 type Instruction struct {
@@ -36,6 +44,8 @@ type System struct {
 	// serialization header
 	GnarkVersion string
 	ScalarField  string
+
+	Type SystemType
 
 	Instructions []Instruction
 	Blueprints   []Blueprint
@@ -87,8 +97,9 @@ type System struct {
 }
 
 // NewSystem initialize the common structure among constraint system
-func NewSystem(scalarField *big.Int, capacity int) System {
+func NewSystem(scalarField *big.Int, capacity int, t SystemType) System {
 	system := System{
+		Type:               t,
 		SymbolTable:        debug.NewSymbolTable(),
 		MDebug:             map[int]int{},
 		GnarkVersion:       gnark.Version.String(),
