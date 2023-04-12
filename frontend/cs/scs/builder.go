@@ -58,7 +58,7 @@ type builder struct {
 
 	// records multiplications constraint to avoid duplicate.
 	// see mulConstraintExist(...)
-	mMulConstraints map[uint64]int
+	mMulInstructions map[uint64]int
 
 	// same thing for addition gates
 	// see addConstraintExist(...)
@@ -76,7 +76,7 @@ type builder struct {
 func newBuilder(field *big.Int, config frontend.CompileConfig) *builder {
 	b := builder{
 		mtBooleans:       make(map[expr.Term]struct{}),
-		mMulConstraints:  make(map[uint64]int, config.Capacity/2),
+		mMulInstructions: make(map[uint64]int, config.Capacity/2),
 		mAddInstructions: make(map[uint64]int, config.Capacity/2),
 		config:           config,
 		Store:            kvstore.New(),
@@ -135,22 +135,15 @@ type sparseR1C struct {
 
 // a * b == c
 func (builder *builder) addMulGate(a, b, c expr.Term) {
-	qO := builder.tMinusOne
-	if c.Coeff != builder.tOne {
-		// slow path
-		qO = builder.cs.Neg(c.Coeff)
-	}
 	qM := builder.cs.Mul(a.Coeff, b.Coeff)
-
 	QM := builder.cs.AddCoeff(qM)
-	QO := builder.cs.AddCoeff(qO)
 
 	builder.cs.AddSparseR1C(constraint.SparseR1C{
 		XA: uint32(a.VID),
 		XB: uint32(b.VID),
 		XC: uint32(c.VID),
 		QM: QM,
-		QO: QO,
+		QO: constraint.CoeffIdMinusOne,
 	}, builder.mulGate)
 }
 
@@ -172,6 +165,9 @@ func (builder *builder) addAddGate(a, b expr.Term, xc uint32, k constraint.Eleme
 }
 
 func (builder *builder) addMulGateGeneric(a, b, c expr.Term) {
+	// TODO @gbotrel refactor into addPlonkConstraint;
+	// this is a mul gate, but the unsolved wire may be a or b (instead of c)
+	// and the qO coefficient is arbitrary.
 	qO := builder.tMinusOne
 	if c.Coeff != builder.tOne {
 		// slow path
@@ -460,6 +456,9 @@ func (builder *builder) addConstraintExist(a, b expr.Term, k constraint.Element)
 		blueprint.DecompressSparseR1C(&c, builder.cs.GetCallData(inst))
 
 		// qO == -1
+		if a.WireID() == int(c.XB) {
+			a, b = b, a // ensure a is in qL
+		}
 
 		tk := builder.cs.MakeTerm(&k, 0)
 		if tk.CoeffID() != int(c.QC) {
@@ -523,70 +522,56 @@ func (builder *builder) addConstraintExist(a, b expr.Term, k constraint.Element)
 // limitations:
 // 1. this piece of code assumes some behavior from constraint/ package (like coeffIDs, or append-style
 // constraint management)
-// func (builder *builder) mulConstraintExist(a, b expr.Term) (expr.Term, bool) {
-// 	// ensure deterministic combined identifier;
-// 	if a.VID < b.VID {
-// 		a, b = b, a
-// 	}
-// 	h := uint64(a.WireID()) | uint64(b.WireID()<<32)
-// 	if a.VID < b.VID {
-// 		a, b = b, a
-// 	}
+func (builder *builder) mulConstraintExist(a, b expr.Term) (expr.Term, bool) {
+	// ensure deterministic combined identifier;
+	if a.VID < b.VID {
+		a, b = b, a
+	}
+	h := uint64(a.WireID()) | uint64(b.WireID()<<32)
 
-// 	if cID, ok := builder.mMulConstraints[h]; ok {
-// 		// seems likely we have a fit, let's double check
-// 		if c := builder.cs.GetConstraint(cID); c != nil {
-// 			if !(c.K|c.L.CoeffID()|c.R.CoeffID() == constraint.CoeffIdZero) {
-// 				panic("sanity check failed; recorded a mul constraint with qL, qR or qC set")
-// 			}
+	if iID, ok := builder.mMulInstructions[h]; ok {
+		// if we do custom gates with slices in the constraint
+		// should use a shared object here to avoid allocs.
+		var c constraint.SparseR1C
 
-// 			// qO == -1
-// 			if c.O.CoeffID() != constraint.CoeffIdMinusOne {
-// 				// we could probably handle that case, but it shouldn't
-// 				// happen with our current APIs --> each time we record a mul gate in the duplicate
-// 				// map qO == -1
-// 				return expr.Term{}, false
-// 			}
+		// seems likely we have a fit, let's double check
+		inst := builder.cs.GetInstruction(iID)
+		// we know the blueprint we added it.
+		blueprint := constraint.BlueprintSparseR1CMul{}
+		blueprint.DecompressSparseR1C(&c, builder.cs.GetCallData(inst))
 
-// 			if a.WireID() == c.R.WireID() {
-// 				a, b = b, a // ensure a is in qL
-// 			}
-// 			if (a.WireID() != c.L.WireID()) || (b.WireID() != c.R.WireID()) {
-// 				// that shouldn't happen; it means we added an entry in the duplicate mul constraint
-// 				// map with a key that don't match the entries.
-// 				log := logger.Logger()
-// 				log.Error().Msg("mMulConstraints entry doesn't match key")
-// 				return expr.Term{}, false
-// 			}
+		// qO == -1
 
-// 			// recompute the qM coeff and check that it matches;
-// 			qM := a.Coeff
-// 			builder.cs.Mul(&qM, &b.Coeff)
-// 			tm := builder.cs.MakeTerm(&qM, 0)
-// 			if c.M[0].CoeffID() != tm.CoeffID() {
-// 				// so we wanted to compute
-// 				// N * xC == qM*xA*xB
-// 				// but found a constraint
-// 				// xC == qM'*xA*xB
-// 				// the coefficient for our resulting wire is different;
-// 				// N = qM / qM'
-// 				N := builder.cs.GetCoefficient(c.M[0].CoeffID())
-// 				builder.cs.Inverse(&N)
-// 				builder.cs.Mul(&N, &qM)
+		if a.WireID() == int(c.XB) {
+			a, b = b, a // ensure a is in qL
+		}
 
-// 				return expr.NewTerm(c.O.WireID(), N), true
-// 			}
+		// recompute the qM coeff and check that it matches;
+		qM := builder.cs.Mul(a.Coeff, b.Coeff)
+		tm := builder.cs.MakeTerm(&qM, 0)
+		if int(c.QM) != tm.CoeffID() {
+			// so we wanted to compute
+			// N * xC == qM*xA*xB
+			// but found a constraint
+			// xC == qM'*xA*xB
+			// the coefficient for our resulting wire is different;
+			// N = qM / qM'
+			N := builder.cs.GetCoefficient(int(c.QM))
+			N = builder.cs.Inverse(N)
+			N = builder.cs.Mul(N, qM)
 
-// 			// we found the exact same constraint
-// 			return expr.NewTerm(c.O.WireID(), builder.tOne), true
-// 		}
-// 	}
+			return expr.NewTerm(int(c.XC), N), true
+		}
 
-// 	// we are going to add this constraint, so we mark it.
-// 	// ! assumes the caller add a constraint immediately  after the call to this function
-// 	builder.mMulConstraints[h] = builder.cs.GetNbConstraints()
-// 	return expr.Term{}, false
-// }
+		// we found the exact same constraint
+		return expr.NewTerm(int(c.XC), builder.tOne), true
+	}
+
+	// we are going to add this constraint, so we mark it.
+	// ! assumes the caller add an instruction immediately  after the call to this function
+	builder.mMulInstructions[h] = builder.cs.GetNbInstructions()
+	return expr.Term{}, false
+}
 
 func (builder *builder) splitProd(acc expr.Term, r expr.LinearExpression) expr.Term {
 	// floor case
@@ -595,13 +580,13 @@ func (builder *builder) splitProd(acc expr.Term, r expr.LinearExpression) expr.T
 	}
 	// we want to add a constraint such that acc * r[0] == o
 	// let's check if we didn't already constrain a similar product
-	// o, found := builder.mulConstraintExist(acc, r[0])
+	o, found := builder.mulConstraintExist(acc, r[0])
 
-	// if !found {
-	// constraint to add: acc * r[0] == o
-	o := builder.newInternalVariable()
-	builder.addMulGate(acc, r[0], o)
-	// }
+	if !found {
+		// constraint to add: acc * r[0] == o
+		o = builder.newInternalVariable()
+		builder.addMulGate(acc, r[0], o)
+	}
 
 	return builder.splitProd(o, r[1:])
 }

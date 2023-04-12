@@ -59,13 +59,10 @@ func (b *BlueprintSparseR1CMul) CompressSparseR1C(c *SparseR1C) []uint32 {
 func (b *BlueprintSparseR1CMul) Solve(s Solver, calldata []uint32) {
 	m0 := s.GetValue(calldata[3], calldata[0])
 	m1 := s.GetValue(CoeffIdOne, calldata[1])
-	// qO := s.GetCoeff(calldata[3])
 
 	m0 = s.Mul(m0, m1)
-	// m0.Div(qO)
 
 	s.SetValue(calldata[2], m0)
-
 }
 
 func (b *BlueprintSparseR1CMul) DecompressSparseR1C(c *SparseR1C, calldata []uint32) {
