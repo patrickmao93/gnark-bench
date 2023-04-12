@@ -341,25 +341,10 @@ func (solver *solver) processInstruction(inst constraint.Instruction, scratch *s
 	// fetch the blueprint
 	blueprint := solver.Blueprints[inst.BlueprintID]
 	calldata := solver.GetCallData(inst)
-
-	// blueprint encodes a hint, we execute.
-	// TODO @gbotrel may be worth it to move hint logic in blueprint "solve"
-	if bc, ok := blueprint.(constraint.BlueprintHint); ok {
-		var hm constraint.HintMapping
-		bc.DecompressHint(&hm, calldata)
-		return solver.solveWithHint(hm)
-	}
-
-	// blueprint declared "I know how to solve this."
-	if bc, ok := blueprint.(constraint.BlueprintSolvable); ok {
-		return bc.Solve(solver, calldata)
-	}
-
 	cID := inst.ConstraintOffset // here we have 1 constraint in the instruction only
 
 	if solver.Type == constraint.SystemR1CS {
 		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
-			// TODO @gbotrel use pool object here for the R1C
 			// TODO @gbotrel we use the solveR1C method for now, having user-defined
 			// blueprint for R1CS would require constraint.Solver interface to add methods
 			// to set a,b,c since it's more efficient to compute these while we solve.
@@ -367,6 +352,11 @@ func (solver *solver) processInstruction(inst constraint.Instruction, scratch *s
 			return solver.solveR1C(cID, &scratch.tR1C)
 		}
 	} else if solver.Type == constraint.SystemSparseR1CS {
+		// blueprint declared "I know how to solve this."
+		if bc, ok := blueprint.(constraint.BlueprintSolvable); ok {
+			return bc.Solve(solver, calldata)
+		}
+
 		if bc, ok := blueprint.(constraint.BlueprintSparseR1C); ok {
 			// sparse R1CS
 			bc.DecompressSparseR1C(&scratch.tSparseR1C, calldata)
@@ -379,6 +369,14 @@ func (solver *solver) processInstruction(inst constraint.Instruction, scratch *s
 			}
 			return nil
 		}
+	}
+
+	// blueprint encodes a hint, we execute.
+	// TODO @gbotrel may be worth it to move hint logic in blueprint "solve"
+	if bc, ok := blueprint.(constraint.BlueprintHint); ok {
+		var hm constraint.HintMapping
+		bc.DecompressHint(&hm, calldata)
+		return solver.solveWithHint(hm)
 	}
 
 	return nil

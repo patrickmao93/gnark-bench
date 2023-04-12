@@ -131,7 +131,7 @@ func TestSerialization(t *testing.T) {
 	}
 }
 
-const n = 10000
+const n = 1000000
 
 type circuit struct {
 	X frontend.Variable
