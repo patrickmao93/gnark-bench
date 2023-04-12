@@ -16,8 +16,8 @@ import (
 	{{ template "import_fr" . }}
 )
 
-// Solver represent the state of the Solver during a call to System.Solve(...)
-type Solver struct {
+// solution represent the state of the solution during a call to System.Solve(...)
+type solution struct {
 	arithEngine
 
 	cs *constraint.System
@@ -35,9 +35,9 @@ type Solver struct {
 	coefficientsNegInv fr.Vector  // TODO @gbotrel this should be computed once SparseR1CS solver perf. 
 }
 
-func newSolver(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element, isR1CS bool) (Solver, error) {
+func newSolution(cs *constraint.System, nbWires int, hintFunctions map[solver.HintID]solver.Hint, coefficients []fr.Element, isR1CS bool) (solution, error) {
 
-	s := Solver{
+	s := solution{
 			cs: cs,
 			st: &cs.SymbolTable, 
 			values: make([]fr.Element, nbWires),
@@ -74,7 +74,7 @@ func newSolver(cs *constraint.System, nbWires int, hintFunctions map[solver.Hint
 	return s, nil
 }
 
-func (s *Solver) set(id int, value fr.Element) {
+func (s *solution) set(id int, value fr.Element) {
 	if s.solved[id] {
 		panic("solving the same wire twice should never happen.")
 	}
@@ -84,13 +84,13 @@ func (s *Solver) set(id int, value fr.Element) {
 }
 
 // isValid returns true if all wires are solved
-func (s *Solver) isValid() bool {
+func (s *solution) isValid() bool {
 	return int(s.nbSolved) == len(s.values)
 }
 
 // computeTerm computes coeff*variable
 // TODO @gbotrel check if t is a Constant only
-func (s *Solver) computeTerm(t constraint.Term) fr.Element {
+func (s *solution) computeTerm(t constraint.Term) fr.Element {
 	cID, vID := t.CoeffID(), t.WireID()
 	if cID != 0 && !s.solved[vID] {
 		panic("computing a term with an unsolved wire")
@@ -117,7 +117,7 @@ func (s *Solver) computeTerm(t constraint.Term) fr.Element {
 
 // r += (t.coeff*t.value)
 // TODO @gbotrel check t.IsConstant on the caller side when necessary
-func (s *Solver) accumulateInto(t constraint.Term, r *fr.Element) {
+func (s *solution) accumulateInto(t constraint.Term, r *fr.Element) {
 	cID := t.CoeffID()
 	vID := t.WireID()
 
@@ -140,7 +140,7 @@ func (s *Solver) accumulateInto(t constraint.Term, r *fr.Element) {
 }
 
 // solveWithHint executes a hint and assign the result to its defined outputs.
-func (s *Solver) solveWithHint(h constraint.HintMapping) error {
+func (s *solution) solveWithHint(h constraint.HintMapping) error {
 	// ensure hint function was provided
 	f, ok := s.mHintsFunctions[h.HintID]
 	if !ok {
@@ -189,7 +189,7 @@ func (s *Solver) solveWithHint(h constraint.HintMapping) error {
 	return err 
 }
 
-func (s *Solver) printLogs(log zerolog.Logger, logs []constraint.LogEntry) {
+func (s *solution) printLogs(log zerolog.Logger, logs []constraint.LogEntry) {
 	if log.GetLevel() == zerolog.Disabled {
 		return
 	}
@@ -202,7 +202,7 @@ func (s *Solver) printLogs(log zerolog.Logger, logs []constraint.LogEntry) {
 
 const unsolvedVariable = "<unsolved>"
 
-func (s *Solver) logValue(log constraint.LogEntry) string {
+func (s *solution) logValue(log constraint.LogEntry) string {
 	var toResolve []interface{}
 	var (
 		eval         fr.Element
@@ -263,19 +263,19 @@ func (s *Solver) logValue(log constraint.LogEntry) string {
 }
 
 
-// Implement constraint.Solver
-func (s *Solver) GetValue(cID, vID uint32) constraint.Element {
+// Implement constraint.solution
+func (s *solution) GetValue(cID, vID uint32) constraint.Element {
 	var r constraint.Element
 	e := s.computeTerm(constraint.Term{CID:cID,VID: vID})	
 	copy(r[:], e[:])
 	return r
 }
-func (s *Solver) GetCoeff(cID uint32) constraint.Element {
+func (s *solution) GetCoeff(cID uint32) constraint.Element {
 	var r constraint.Element
 	copy(r[:], s.coefficients[cID][:])
 	return r
 }
-func (s *Solver) SetValue(vID uint32, f constraint.Element) {
+func (s *solution) SetValue(vID uint32, f constraint.Element) {
 	s.set(int(vID), fr.Element(f[:]))
 }
 

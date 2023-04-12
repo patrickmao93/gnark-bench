@@ -35,7 +35,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 )
 
-// solution represent the state of the Solver during a call to System.Solve(...)
+// solution represent the state of the solution during a call to System.Solve(...)
 type solution struct {
 	arithEngine
 
@@ -279,7 +279,7 @@ func (s *solution) logValue(log constraint.LogEntry) string {
 	return fmt.Sprintf(log.Format, toResolve...)
 }
 
-// Implement constraint.Solver
+// Implement constraint.solution
 func (s *solution) GetValue(cID, vID uint32) constraint.Element {
 	var r constraint.Element
 	e := s.computeTerm(constraint.Term{CID: cID, VID: vID})
