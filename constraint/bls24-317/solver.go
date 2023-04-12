@@ -50,8 +50,7 @@ type solver struct {
 	// used to out api.Println
 	logger zerolog.Logger
 
-	a, b, c            fr.Vector // R1CS solver will compute the a,b,c matrices
-	coefficientsNegInv fr.Vector // TODO @gbotrel this should be computed once SparseR1CS solver perf.
+	a, b, c fr.Vector // R1CS solver will compute the a,b,c matrices
 }
 
 func newSolver(cs *system, witness fr.Vector, opts ...csolver.Option) (*solver, error) {
@@ -116,12 +115,6 @@ func newSolver(cs *system, witness fr.Vector, opts ...csolver.Option) (*solver, 
 		s.a = make(fr.Vector, cs.GetNbConstraints(), n)
 		s.b = make(fr.Vector, cs.GetNbConstraints(), n)
 		s.c = make(fr.Vector, cs.GetNbConstraints(), n)
-	} else {
-		// TODO @gbotrel this could be done once in the CS, most of the time.
-		s.coefficientsNegInv = fr.Vector(fr.BatchInvert(s.Coefficients))
-		for i := 0; i < len(s.coefficientsNegInv); i++ {
-			s.coefficientsNegInv[i].Neg(&s.coefficientsNegInv[i])
-		}
 	}
 
 	return &s, nil
@@ -309,8 +302,7 @@ func (s *solver) logValue(log constraint.LogEntry) string {
 }
 
 // divByCoeff sets res = res / t.Coeff
-func (solver *solver) divByCoeff(res *fr.Element, t constraint.Term) {
-	cID := t.CoeffID()
+func (solver *solver) divByCoeff(res *fr.Element, cID uint32) {
 	switch cID {
 	case constraint.CoeffIdOne:
 		return
@@ -381,6 +373,9 @@ func (solver *solver) processInstruction(inst constraint.Instruction) error {
 	if solver.Type == constraint.SystemR1CS {
 		if bc, ok := blueprint.(constraint.BlueprintR1C); ok {
 			// TODO @gbotrel use pool object here for the R1C
+			// TODO @gbotrel we use the solveR1C method for now, having user-defined
+			// blueprint for R1CS would require constraint.Solver interface to add methods
+			// to set a,b,c since it's more efficient to compute these while we solve.
 			var tmpR1C constraint.R1C
 			bc.DecompressR1C(&tmpR1C, calldata)
 			return solver.solveR1C(cID, &tmpR1C)
@@ -608,7 +603,7 @@ func (solver *solver) solveR1C(cID uint32, r *constraint.R1C) error {
 	// wire is the term (coeff * value)
 	// but in the solver we want to store the value only
 	// note that in gnark frontend, coeff here is always 1 or -1
-	solver.divByCoeff(&wire, termToCompute)
+	solver.divByCoeff(&wire, termToCompute.CID)
 	solver.set(wID, wire)
 
 	return nil
@@ -734,9 +729,8 @@ func (solver *solver) solveSparseR1C(c *constraint.SparseR1C) error {
 	// o = - ((m0 * m1) + l + r + c.QC) / c.O
 	o.Mul(&m0, &m1).Add(&o, &l).Add(&o, &r).Add(&o, &solver.Coefficients[c.QC])
 
-	// TODO @gbotrel seems it's the only place we use coefficientsNegInv
-	// and I suspect most of the time c.QO == 1 or -1.
-	o.Mul(&o, &solver.coefficientsNegInv[cID])
+	solver.divByCoeff(&o, cID)
+	o.Neg(&o)
 
 	solver.set(int(vID), o)
 	return nil
