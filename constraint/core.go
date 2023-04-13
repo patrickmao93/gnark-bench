@@ -12,6 +12,7 @@ import (
 	"github.com/consensys/gnark/internal/tinyfield"
 	"github.com/consensys/gnark/internal/utils"
 	"github.com/consensys/gnark/logger"
+	"github.com/consensys/gnark/profile"
 )
 
 type SystemType uint16
@@ -313,6 +314,7 @@ func (cs *System) GetCallData(instruction Instruction) []uint32 {
 }
 
 func (cs *System) AddR1C(c R1C, bID BlueprintID) int {
+	profile.RecordConstraint()
 	instruction := cs.compressR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 
@@ -322,6 +324,7 @@ func (cs *System) AddR1C(c R1C, bID BlueprintID) int {
 }
 
 func (cs *System) AddSparseR1C(c SparseR1C, bID BlueprintID) int {
+	profile.RecordConstraint()
 	instruction := cs.compressSparseR1C(&c, bID)
 	cs.Instructions = append(cs.Instructions, instruction)
 
