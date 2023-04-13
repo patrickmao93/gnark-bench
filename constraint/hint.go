@@ -14,24 +14,29 @@ type HintMapping struct {
 // WireIterator implements constraint.Iterable
 func (h *HintMapping) WireIterator() func() int {
 	curr := 0
+	n := 0
+	for i := 0; i < len(h.Inputs); i++ {
+		n += len(h.Inputs[i])
+	}
+	inputs := make([]int, 0, n)
+	for i := 0; i < len(h.Inputs); i++ {
+		for j := 0; j < len(h.Inputs[i]); j++ {
+			term := h.Inputs[i][j]
+			if term.IsConstant() {
+				continue
+			}
+			inputs = append(inputs, int(term.VID))
+		}
+	}
+
 	return func() int {
 		if curr < len(h.Outputs) {
 			curr++
 			return h.Outputs[curr-1]
 		}
-		n := len(h.Outputs)
-		// TODO @gbotrel revisit that looks terrible.
-		for i := 0; i < len(h.Inputs); i++ {
-			n += len(h.Inputs[i])
-			for curr < n {
-				curr++
-				idx := curr - 1 - n + len(h.Inputs[i])
-				term := h.Inputs[i][idx]
-				if term.IsConstant() {
-					continue
-				}
-				return int(term.VID)
-			}
+		if curr < len(h.Outputs)+len(inputs) {
+			curr++
+			return inputs[curr-1-len(h.Outputs)]
 		}
 		return -1
 	}
