@@ -18,7 +18,6 @@ package groth16
 
 import (
 	curve "github.com/consensys/gnark-crypto/ecc/bn254"
-
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/fft"
 
 	"bytes"
@@ -37,47 +36,72 @@ func TestProofSerialization(t *testing.T) {
 
 	properties := gopter.NewProperties(parameters)
 
+	roundTripSuccessful := func(proof Proof) bool {
+		var pCompressed, pRaw Proof
+		var bufCompressed bytes.Buffer
+		written, err := proof.WriteTo(&bufCompressed)
+		if err != nil {
+			return false
+		}
+
+		read, err := pCompressed.ReadFrom(&bufCompressed)
+		if err != nil {
+			return false
+		}
+
+		if read != written {
+			return false
+		}
+
+		var bufRaw bytes.Buffer
+		written, err = proof.WriteRawTo(&bufRaw)
+		if err != nil {
+			return false
+		}
+
+		read, err = pRaw.ReadFrom(&bufRaw)
+		if err != nil {
+			return false
+		}
+
+		if read != written {
+			return false
+		}
+
+		return reflect.DeepEqual(&proof, &pCompressed) && reflect.DeepEqual(&proof, &pRaw)
+	}
+
 	properties.Property("Proof -> writer -> reader -> Proof should stay constant", prop.ForAll(
 		func(ar, krs curve.G1Affine, bs curve.G2Affine) bool {
-			var proof, pCompressed, pRaw Proof
+			var proof Proof
 
 			// create a random proof
 			proof.Ar = ar
 			proof.Krs = krs
 			proof.Bs = bs
 
-			var bufCompressed bytes.Buffer
-			written, err := proof.WriteTo(&bufCompressed)
-			if err != nil {
-				return false
-			}
-
-			read, err := pCompressed.ReadFrom(&bufCompressed)
-			if err != nil {
-				return false
-			}
-
-			if read != written {
-				return false
-			}
-
-			var bufRaw bytes.Buffer
-			written, err = proof.WriteRawTo(&bufRaw)
-			if err != nil {
-				return false
-			}
-
-			read, err = pRaw.ReadFrom(&bufRaw)
-			if err != nil {
-				return false
-			}
-
-			if read != written {
-				return false
-			}
-
-			return reflect.DeepEqual(&proof, &pCompressed) && reflect.DeepEqual(&proof, &pRaw)
+			return roundTripSuccessful(proof)
 		},
+		GenG1(),
+		GenG1(),
+		GenG2(),
+	))
+
+	properties.Property("Proof with commitments -> writer -> reader -> Proof should stay constant", prop.ForAll(
+		func(ar, krs, pok, comm curve.G1Affine, bs curve.G2Affine) bool {
+			var proof Proof
+
+			// create a random proof
+			proof.Ar = ar
+			proof.Krs = krs
+			proof.Bs = bs
+			proof.CommitmentPok = pok
+			proof.Commitment = comm
+
+			return roundTripSuccessful(proof)
+		},
+		GenG1(),
+		GenG1(),
 		GenG1(),
 		GenG1(),
 		GenG2(),

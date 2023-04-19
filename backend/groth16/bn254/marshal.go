@@ -52,6 +52,19 @@ func (proof *Proof) writeTo(w io.Writer, raw bool) (int64, error) {
 	if err := enc.Encode(&proof.Krs); err != nil {
 		return enc.BytesWritten(), err
 	}
+	hasCommitment := !proof.Commitment.IsInfinity()
+	if err := enc.Encode(hasCommitment); err != nil {
+		return enc.BytesWritten(), err
+	}
+	if hasCommitment {
+		if err := enc.Encode(&proof.Commitment); err != nil {
+			return enc.BytesWritten(), err
+		}
+		if err := enc.Encode(&proof.CommitmentPok); err != nil {
+			return enc.BytesWritten(), err
+		}
+	}
+
 	return enc.BytesWritten(), nil
 }
 
@@ -61,14 +74,27 @@ func (proof *Proof) ReadFrom(r io.Reader) (n int64, err error) {
 
 	dec := curve.NewDecoder(r)
 
-	if err := dec.Decode(&proof.Ar); err != nil {
+	if err = dec.Decode(&proof.Ar); err != nil {
 		return dec.BytesRead(), err
 	}
-	if err := dec.Decode(&proof.Bs); err != nil {
+	if err = dec.Decode(&proof.Bs); err != nil {
 		return dec.BytesRead(), err
 	}
-	if err := dec.Decode(&proof.Krs); err != nil {
+	if err = dec.Decode(&proof.Krs); err != nil {
 		return dec.BytesRead(), err
+	}
+
+	var hasCommitment bool
+	if err = dec.Decode(&hasCommitment); err != nil {
+		return dec.BytesRead(), err
+	}
+	if hasCommitment {
+		if err = dec.Decode(&proof.Commitment); err != nil {
+			return dec.BytesRead(), err
+		}
+		if err = dec.Decode(&proof.CommitmentPok); err != nil {
+			return dec.BytesRead(), err
+		}
 	}
 
 	return dec.BytesRead(), nil
