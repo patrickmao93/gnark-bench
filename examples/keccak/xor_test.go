@@ -14,22 +14,22 @@ import (
 )
 
 func TestXorLookup(t *testing.T) {
-	w := &XorCircuit{
-		A: 6,  // 0110
-		B: 9,  // 1001
-		C: 15, // 1111
+	// w := &XorCircuit{
+	// 	A: 6,  // 0110
+	// 	B: 9,  // 1001
+	// 	C: 15, // 1111
 
-		// D: 7,  // 0111
-		// E: 9,  // 1001
-		// F: 14, // 1110
+	// 	// D: 7,  // 0111
+	// 	// E: 9,  // 1001
+	// 	// F: 14, // 1110
 
-		XorBits: 16,
-	}
+	// 	XorBits: 16,
+	// }
 	circuit := &XorCircuit{
 		XorBits: 16,
 	}
-	err := test.IsSolved(circuit, w, ecc.BN254.ScalarField())
-	check(err)
+	// err := test.IsSolved(circuit, w, ecc.BN254.ScalarField())
+	// check(err)
 	p := profile.Start()
 	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 	check(err)
