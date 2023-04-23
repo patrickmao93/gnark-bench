@@ -30,11 +30,11 @@ func TestXorLookup(t *testing.T) {
 	}
 	// err := test.IsSolved(circuit, w, ecc.BN254.ScalarField())
 	// check(err)
-	p := profile.Start()
+	// p := profile.Start()
 	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 	check(err)
-	p.Stop()
-	fmt.Println(p.Top())
+	// p.Stop()
+	// fmt.Println(p.Top())
 	fmt.Println("constraints", cs.GetNbConstraints())
 }
 
