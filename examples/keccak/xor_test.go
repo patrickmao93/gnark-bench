@@ -36,6 +36,7 @@ func (c *XorCircuit) Define(api frontend.API) error {
 	table := logderivlookup.New(api)
 	var k float64 = 8 // k + 1 quadruples the constraint count
 	count := int(math.Pow(2, k))
+	fmt.Println("count", count)
 	for _, v := range genXorTable(count) {
 		table.Insert(v)
 	}
