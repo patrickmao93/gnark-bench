@@ -88,7 +88,6 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 				st[j+i] = ka.xor(st[j+i], t)
 			}
 		}
-		print(1, st)
 		// rho pi
 		t = st[1]
 		for i := 0; i < 24; i++ {
@@ -97,7 +96,6 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 			st[j] = ka.wa.lrot(t, 64-rotc[i], ka.k)
 			t = bc[0]
 		}
-		print(2, st)
 		// chi
 		for j := 0; j < 25; j += 5 {
 			for i := 0; i < 5; i++ {
@@ -107,10 +105,8 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 				st[j+i] = ka.chi(bc[(i+1)%5], bc[(i+2)%5], st[j+i])
 			}
 		}
-		print(3, st)
 		// iota
 		st[0] = ka.xor(st[0], ka.rc[round])
-		print(4, st)
 	}
 	return st
 }

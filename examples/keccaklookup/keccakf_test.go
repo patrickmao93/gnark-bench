@@ -6,6 +6,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"github.com/consensys/gnark/test"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -80,20 +81,20 @@ func TestPermute(t *testing.T) {
 	c := &KeccakCircuit{
 		Data: dataBits,
 		Out:  out256,
-		k:    8,
+		k:    4,
 	}
 	w := &KeccakCircuit{
 		Data: dataBits,
 		Out:  out256,
-		k:    8,
+		k:    4,
 	}
 
-	assert := test.NewAssert(t)
-	assert.ProverSucceeded(c, w)
+	err := test.IsSolved(c, w, ecc.BN254.ScalarField())
+	check(err)
 
-	// cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, c)
-	// check(err)
-	// fmt.Println("constraints", cs.GetNbConstraints())
+	cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, c)
+	check(err)
+	fmt.Println("constraints", cs.GetNbConstraints())
 }
 
 type KeccakCircuit struct {
@@ -139,16 +140,6 @@ func (c *KeccakCircuit) Define(api frontend.API) error {
 		expected = append(expected, Word{Val: b, Size: 1})
 	}
 	api.AssertIsEqual(len(actual), len(expected))
-	fmt.Printf("actual ")
-	for i := range actual {
-		fmt.Printf("%d", actual[i].Val)
-	}
-	fmt.Println()
-	fmt.Printf("expected ")
-	for i := range expected {
-		fmt.Printf("%d", expected[i].Val)
-	}
-	fmt.Println()
 	for i := range expected {
 		api.AssertIsEqual(actual[i].Val, expected[i].Val)
 	}
