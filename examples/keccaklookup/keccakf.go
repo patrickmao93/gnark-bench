@@ -3,6 +3,7 @@ package keccaklookup
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/std/lookup/logderivlookup"
@@ -78,6 +79,7 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 	var t Words
 	for round := 0; round < 24; round++ {
 		// theta
+		thetaTime := time.Now()
 		for i := 0; i < 5; i++ {
 			bc[i] = ka.xor(st[i], st[i+5], st[i+10], st[i+15], st[i+20])
 		}
@@ -88,7 +90,9 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 				st[j+i] = ka.xor(st[j+i], t)
 			}
 		}
+		fmt.Printf("round %d theta took %s\n", round, time.Since(thetaTime))
 		// rho pi
+		rhopiTime := time.Now()
 		t = st[1]
 		for i := 0; i < 24; i++ {
 			j := piln[i]
@@ -96,7 +100,9 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 			st[j] = ka.wa.lrot(t, 64-rotc[i], ka.k)
 			t = bc[0]
 		}
+		fmt.Printf("round %d rho pi took %s\n", round, time.Since(rhopiTime))
 		// chi
+		chiTime := time.Now()
 		for j := 0; j < 25; j += 5 {
 			for i := 0; i < 5; i++ {
 				bc[i] = st[j+i]
@@ -105,8 +111,11 @@ func (ka *KeccakfAPI) Permute(st [25]Words) [25]Words {
 				st[j+i] = ka.chi(bc[(i+1)%5], bc[(i+2)%5], st[j+i])
 			}
 		}
+		fmt.Printf("round %d chi took %s\n", round, time.Since(chiTime))
 		// iota
+		iotaTime := time.Now()
 		st[0] = ka.xor(st[0], ka.rc[round])
+		fmt.Printf("round %d iota took %s\n", round, time.Since(iotaTime))
 	}
 	return st
 }
@@ -120,7 +129,9 @@ func (k *KeccakfAPI) chi(a, b, c Words) Words {
 		// Note: for now if the size of the word a, b, and c are not equal to k, the lookup would
 		// give wrong result. TODO: check and pad a, b, c to correct size before lookup.
 		merged := k.wa.merge(Words{a[i], b[i], c[i]})
+		t := time.Now()
 		res := k.chiTable.Lookup(merged.Val)
+		fmt.Println("chi lookup took", time.Since(t))
 		ret = append(ret, Word{Val: res[0], Size: a[i].Size})
 	}
 	return ret
@@ -147,7 +158,9 @@ func (k *KeccakfAPI) xor2(a, b Words) Words {
 			panic(fmt.Sprintf("cannot xor: a[%d].size (%d) != b[%d].size (%d)", i, a[i].Size, i, b[i].Size))
 		}
 		merged := k.wa.merge(Words{a[i], b[i]})
+		t := time.Now()
 		xored := k.xorTable.Lookup(merged.Val)
+		fmt.Println("xor lookup took", time.Since(t))
 		ret = append(ret, Word{Val: xored[0], Size: a[i].Size})
 	}
 	return ret

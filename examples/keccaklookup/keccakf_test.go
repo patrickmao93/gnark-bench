@@ -81,12 +81,12 @@ func TestPermute(t *testing.T) {
 	c := &KeccakCircuit{
 		Data: dataBits,
 		Out:  out256,
-		k:    4,
+		k:    8,
 	}
 	w := &KeccakCircuit{
 		Data: dataBits,
 		Out:  out256,
-		k:    4,
+		k:    8,
 	}
 
 	err := test.IsSolved(c, w, ecc.BN254.ScalarField())
